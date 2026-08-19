@@ -28,6 +28,16 @@ st.markdown("""
   .val { color:#22303a; font-size:.92rem; margin-bottom:.2rem; }
   a { color:#1668a6; }
   .stDataFrame { border:1px solid var(--line); }
+  .tl-scroll { overflow-x:auto; border:1px solid var(--line); border-radius:6px; }
+  .tl-table { border-collapse:collapse; width:100%; table-layout:fixed; }
+  .tl-table th, .tl-table td { border:1px solid var(--line); vertical-align:top; }
+  .tl-corner { background:var(--ink); color:#fff; width:130px; min-width:130px; padding:8px; font-size:12px; text-align:left; }
+  .tl-yr { background:var(--ink); color:#fff; padding:8px; font-size:13px; font-family:Georgia,serif; min-width:150px; }
+  .tl-lane { background:#F3EEE4; color:var(--ink); font-size:12.5px; font-weight:600; padding:8px; text-align:left; width:130px; min-width:130px; }
+  .tl-table td { padding:4px; background:#fff; }
+  .tl-empty { background:var(--paper) !important; }
+  .tl-ev { font-size:11px; line-height:1.32; padding:3px 5px; margin:2px 0; background:#fafafa; border-radius:2px; color:#33403a; }
+  .tl-mo { display:inline-block; background:#eee; border-radius:3px; padding:0 4px; margin-right:4px; font-weight:700; color:#555; font-size:10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -216,15 +226,59 @@ with tab3:
     if mev.empty:
         st.info("No events match the current filter.")
     else:
-        mev["date"] = mev["date"].astype(str)
-        mev = mev.sort_values("date")
         jmap = dict(zip(inst["instrument_id"], inst["jurisdiction"]))
+        cmap = dict(zip(inst["instrument_id"], inst["category"]))
+        mev["date"] = mev["date"].astype(str)
+        mev["year"] = mev["date"].str[:4]
         mev["jurisdiction"] = mev["instrument_id"].map(jmap)
-        for _, r in mev.iterrows():
-            link = f' — <a href="{r["official_url"]}" target="_blank">source ↗</a>' if r.get("official_url") else ""
-            st.markdown(f'<div style="border-left:3px solid #0E3B43;padding:.15rem 0 .55rem .8rem;margin-left:.3rem">'
-                        f'<b>{r["date"]}</b> &nbsp;·&nbsp; <span style="color:#7A6F5B">{r.get("jurisdiction","")}</span><br>'
-                        f'{r["event"]}{link}</div>', unsafe_allow_html=True)
+        mev["category"] = mev["instrument_id"].map(cmap)
+        mev = mev[mev["jurisdiction"].notna() & (mev["year"].str.len() == 4)]
+
+        all_years = sorted(mev["year"].unique())
+        cL, cR = st.columns([3, 2])
+        layout = cL.radio("Layout", ["Swimlane grid", "Chronological list"],
+                          horizontal=True, label_visibility="collapsed")
+        yr_sel = cR.select_slider("Year range", options=all_years,
+                                  value=(all_years[0], all_years[-1])) if len(all_years) > 1 else (all_years[0], all_years[-1])
+        y0, y1 = yr_sel
+        tev = mev[(mev["year"] >= y0) & (mev["year"] <= y1)]
+        years = sorted(tev["year"].unique())
+
+        if tev.empty:
+            st.info("No events in the selected year range.")
+        elif layout == "Swimlane grid":
+            st.caption("Years across the top · one lane per jurisdiction · each event in its year cell. "
+                       "Read a lane left-to-right for one jurisdiction's arc; read a column top-to-bottom for one year. "
+                       "Colour = category. Scrolls sideways if the range is wide.")
+            # jurisdictions ordered by earliest event
+            order = tev.groupby("jurisdiction")["date"].min().sort_values().index.tolist()
+            def cellhtml(j, y):
+                e = tev[(tev["jurisdiction"] == j) & (tev["year"] == y)]
+                if e.empty:
+                    return '<td class="tl-empty"></td>'
+                items = []
+                for _, r in e.sort_values("date").iterrows():
+                    col = CAT_COLOR.get(r["category"], "#555")
+                    mo = r["date"][5:7] if len(r["date"]) >= 7 else ""
+                    ev_txt = str(r["event"])
+                    link = f' <a href="{r["official_url"]}" target="_blank">↗</a>' if r.get("official_url") else ""
+                    items.append(f'<div class="tl-ev" style="border-left:3px solid {col}">'
+                                 f'<span class="tl-mo">{mo}</span>{ev_txt}{link}</div>')
+                return f'<td>{"".join(items)}</td>'
+            head = "<th class='tl-corner'>Jurisdiction</th>" + "".join(f"<th class='tl-yr'>{y}</th>" for y in years)
+            rows_html = ""
+            for j in order:
+                rows_html += "<tr>" + f'<th class="tl-lane">{j}</th>' + "".join(cellhtml(j, y) for y in years) + "</tr>"
+            st.markdown(f'<div class="tl-scroll"><table class="tl-table"><tr>{head}</tr>{rows_html}</table></div>',
+                        unsafe_allow_html=True)
+        else:
+            st.caption("Every event in date order.")
+            for _, r in tev.sort_values("date").iterrows():
+                col = CAT_COLOR.get(r["category"], "#0E3B43")
+                link = f' — <a href="{r["official_url"]}" target="_blank">source ↗</a>' if r.get("official_url") else ""
+                st.markdown(f'<div style="border-left:3px solid {col};padding:.15rem 0 .55rem .8rem;margin-left:.3rem">'
+                            f'<b>{r["date"]}</b> &nbsp;·&nbsp; <span style="color:#7A6F5B">{r["jurisdiction"]}</span><br>'
+                            f'{r["event"]}{link}</div>', unsafe_allow_html=True)
 
 # ---- TAB 4: sources ----
 with tab4:
