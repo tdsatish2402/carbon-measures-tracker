@@ -108,42 +108,89 @@ c2.metric("Jurisdictions", view["jurisdiction"].nunique())
 c3.metric("In force", (view["status"] == "In force / operational").sum())
 c4.metric("BCAs", (view["category"] == "BCA").sum())
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    ["Instruments", "Sector coverage", "Timeline", "Official sources", "Methodology"])
+tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["Overview", "Instruments", "Sector coverage", "Timeline", "Official sources", "Methodology"])
+
+# ---- TAB 0: overview register (clean flat table) ----
+with tab0:
+    st.subheader("Overview")
+    st.caption("At-a-glance register of jurisdictions with carbon measures. Use the sidebar filters to narrow the list; open the Instruments tab for full detail on any measure.")
+    if view.empty:
+        st.info("No instruments match the current filters. Widen the selection in the sidebar.")
+    else:
+        # sectors per instrument, collapsed to one cell
+        def sectors_for(iid):
+            if sec.empty: return ""
+            s = sec[sec["instrument_id"] == iid]["sector"].dropna().astype(str).unique()
+            return ", ".join(sorted(s))
+        ov = view.copy()
+        ov["Sectors covered"] = ov["instrument_id"].map(sectors_for)
+        ov = ov.rename(columns={
+            "jurisdiction": "Jurisdiction",
+            "instrument_name": "Measure",
+            "category": "Nature of measure",
+            "status": "Status",
+            "Implementation/Coming into Force Date": "In force / from",
+            "official_url": "Official link",
+        })
+        cols = ["Jurisdiction", "Measure", "Nature of measure", "Status",
+                "In force / from", "Sectors covered", "Official link"]
+        cols = [c for c in cols if c in ov.columns]
+        st.dataframe(
+            ov[cols].sort_values(["Nature of measure", "Jurisdiction"]),
+            hide_index=True, use_container_width=True,
+            column_config={"Official link": st.column_config.LinkColumn("Official link", display_text="open ↗")},
+        )
+        st.caption(f"{len(ov)} measure(s) across {ov['Jurisdiction'].nunique()} jurisdiction(s), current filters.")
 
 # ---- TAB 1: instrument cards ----
 with tab1:
     if view.empty:
         st.info("No instruments match the current filters. Widen the selection in the sidebar.")
-    for _, r in view.iterrows():
-        st.markdown('<div class="cardwrap">', unsafe_allow_html=True)
-        top = f'### {r["jurisdiction"]} — {r["instrument_name"]}'
-        st.markdown(top)
-        st.markdown(cat_pill(r["category"]) +
-                    f'&nbsp;&nbsp;<span class="pill" style="background:#eee;color:#333">{r["status"]}</span>',
-                    unsafe_allow_html=True)
-        impl = r.get("Implementation/Coming into Force Date", "")
-        if impl: st.markdown(f'<div class="lab">Implementation / in force</div><div class="val">{impl}</div>', unsafe_allow_html=True)
-        if r.get("object_and_purpose"):
-            st.markdown(f'<div class="lab">Object &amp; purpose</div><div class="val">{r["object_and_purpose"]}</div>', unsafe_allow_html=True)
-        cc = st.columns(3)
-        for col, (lab, key) in zip(cc, [("Emissions scope","emissions_scope"),
-                                        ("3rd-country adjustment","third_country_adjustment"),
-                                        ("Default values","default_values")]):
-            col.markdown(f'<div class="lab">{lab}</div><div class="val">{r.get(key,"")}</div>', unsafe_allow_html=True)
-        if r.get("calculation"):
-            st.markdown(f'<div class="lab">Calculation</div><div class="val">{r["calculation"]}</div>', unsafe_allow_html=True)
-        if r.get("revenue_use"):
-            st.markdown(f'<div class="lab">Revenue use</div><div class="val">{r["revenue_use"]}</div>', unsafe_allow_html=True)
-        # this instrument's sectors
-        msec = sec[sec["instrument_id"] == r["instrument_id"]] if not sec.empty else pd.DataFrame()
-        if not msec.empty:
-            chips = " · ".join(sorted(msec["sector"].dropna().astype(str).unique()))
-            st.markdown(f'<div class="lab">Sectors</div><div class="val">{chips}</div>', unsafe_allow_html=True)
-        srcline = r.get("primary_source",""); url = r.get("official_url","")
-        if url: st.markdown(f'<div class="lab">Primary source</div><div class="val">{srcline} — <a href="{url}" target="_blank">official page ↗</a></div>', unsafe_allow_html=True)
-        if r.get("notes"): st.caption(r["notes"])
-        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        main, side = st.columns([3, 1], gap="large")
+
+        # right-side index: click a name to isolate that instrument
+        with side:
+            st.markdown('<div class="lab">Jump to instrument</div>', unsafe_allow_html=True)
+            names = ["(show all)"] + [f'{r["jurisdiction"]} — {r["instrument_name"]}'
+                                      for _, r in view.iterrows()]
+            picked = st.radio("index", names, label_visibility="collapsed", key="idx")
+
+        show = view
+        if picked != "(show all)":
+            show = view[view.apply(lambda r: f'{r["jurisdiction"]} — {r["instrument_name"]}' == picked, axis=1)]
+
+        with main:
+            for _, r in show.iterrows():
+                st.markdown('<div class="cardwrap">', unsafe_allow_html=True)
+                st.markdown(f'### {r["jurisdiction"]} — {r["instrument_name"]}')
+                st.markdown(cat_pill(r["category"]) +
+                            f'&nbsp;&nbsp;<span class="pill" style="background:#eee;color:#333">{r["status"]}</span>',
+                            unsafe_allow_html=True)
+                # (2) one-line summary now sits directly under the title, before implementation
+                if r.get("notes"):
+                    st.markdown(f'<div class="val" style="font-style:italic;color:#4a4030;margin-top:.4rem">{r["notes"]}</div>', unsafe_allow_html=True)
+                impl = r.get("Implementation/Coming into Force Date", "")
+                if impl: st.markdown(f'<div class="lab">Implementation / in force</div><div class="val">{impl}</div>', unsafe_allow_html=True)
+                if r.get("object_and_purpose"):
+                    st.markdown(f'<div class="lab">Object &amp; purpose</div><div class="val">{r["object_and_purpose"]}</div>', unsafe_allow_html=True)
+                cc = st.columns(3)
+                for col, (lab, key) in zip(cc, [("Emissions scope","emissions_scope"),
+                                                ("3rd-country adjustment","third_country_adjustment"),
+                                                ("Default values","default_values")]):
+                    col.markdown(f'<div class="lab">{lab}</div><div class="val">{r.get(key,"")}</div>', unsafe_allow_html=True)
+                if r.get("calculation"):
+                    st.markdown(f'<div class="lab">Calculation</div><div class="val">{r["calculation"]}</div>', unsafe_allow_html=True)
+                if r.get("revenue_use"):
+                    st.markdown(f'<div class="lab">Revenue use</div><div class="val">{r["revenue_use"]}</div>', unsafe_allow_html=True)
+                msec = sec[sec["instrument_id"] == r["instrument_id"]] if not sec.empty else pd.DataFrame()
+                if not msec.empty:
+                    chips = " · ".join(sorted(msec["sector"].dropna().astype(str).unique()))
+                    st.markdown(f'<div class="lab">Sectors</div><div class="val">{chips}</div>', unsafe_allow_html=True)
+                srcline = r.get("primary_source",""); url = r.get("official_url","")
+                if url: st.markdown(f'<div class="lab">Primary source</div><div class="val">{srcline} — <a href="{url}" target="_blank">official page ↗</a></div>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
 # ---- TAB 2: sector coverage matrix ----
 with tab2:
