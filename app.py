@@ -28,19 +28,39 @@ st.markdown("""
      cream read as pink on screen). Change --ink here to restyle throughout. */
   :root { --ink:#1D2657; --accent:#3F106E; --gold:#C9A227;
           --paper:#F7F8FA; --card:#FFFFFF; --line:#E3E6EC; --muted:#5B6478; }
+  html, body, [class*="css"] { font-size:17px; }
   .stApp { background:var(--paper); }
+  .stApp p, .stApp li { font-size:1rem; line-height:1.6; }
+  [data-testid="stCaptionContainer"] p { font-size:.92rem !important; color:var(--muted); }
   [data-testid="stHeader"] { background:transparent; }
   h1,h2,h3 { color:var(--ink); font-family:Georgia,'Times New Roman',serif; letter-spacing:-.2px; }
   .cardwrap { border:1px solid var(--line); border-radius:8px; padding:1.1rem 1.25rem;
               background:var(--card); margin-bottom:1.15rem;
               box-shadow:0 1px 2px rgba(29,38,87,.05); }
-  .pill { display:inline-block; padding:.12rem .55rem; border-radius:999px;
-          font-size:.72rem; font-weight:700; letter-spacing:.02em; }
-  .lab { color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.08em;
+  .pill { display:inline-block; padding:.18rem .62rem; border-radius:999px;
+          font-size:.78rem; font-weight:700; letter-spacing:.02em; }
+  .lab { color:var(--muted); font-size:.76rem; text-transform:uppercase; letter-spacing:.08em;
          font-weight:700; margin-top:.5rem; }
-  .val { color:#243049; font-size:.92rem; line-height:1.55; margin-bottom:.2rem; }
+  .val { color:#243049; font-size:.97rem; line-height:1.6; margin-bottom:.2rem; }
   a { color:var(--accent); }
   .stDataFrame { border:1px solid var(--line); }
+  /* shared HTML tables — st.dataframe draws to canvas, so its text can't be
+     resized with CSS; these render as real DOM and stay legible. */
+  .dt-wrap { overflow:auto; border:1px solid var(--line); border-radius:6px;
+             background:var(--card); margin:.3rem 0 .6rem; }
+  .dt { border-collapse:collapse; width:100%; font-size:14.5px; }
+  .dt th { background:var(--ink); color:#fff; font-weight:600; text-align:left;
+           padding:10px 12px; position:sticky; top:0; z-index:2;
+           font-size:13.5px; line-height:1.35; }
+  .dt td { border-top:1px solid var(--line); padding:9px 12px; vertical-align:top;
+           color:#243049; line-height:1.5; }
+  .dt tbody tr:nth-child(even) td { background:#FAFBFD; }
+  .dt td.sec { font-weight:600; color:var(--ink); white-space:nowrap;
+               position:sticky; left:0; background:var(--card); z-index:1;
+               border-right:1px solid var(--line); }
+  .dt tbody tr:nth-child(even) td.sec { background:#FAFBFD; }
+  .dt td.tick { text-align:center; color:#1B7A5A; font-size:17px; font-weight:700; }
+  .dt th.jur { min-width:120px; white-space:normal; }
   [data-testid="stMetricValue"] { color:var(--ink); font-family:Georgia,serif; }
   [data-testid="stMetricLabel"] { color:var(--muted); }
   .stTabs [aria-selected="true"] { color:var(--accent) !important; }
@@ -49,18 +69,18 @@ st.markdown("""
   /* breathing room between the collapsible sections on instrument cards */
   [data-testid="stExpander"] { margin-bottom:.6rem; border-radius:6px;
                                border:1px solid var(--line); background:var(--card); }
-  [data-testid="stExpander"] summary { font-size:.86rem; font-weight:600; color:var(--ink); }
+  [data-testid="stExpander"] summary { font-size:.95rem; font-weight:600; color:var(--ink); }
   .tl-scroll { overflow-x:auto; border:1px solid var(--line); border-radius:6px; }
   .tl-table { border-collapse:collapse; width:100%; table-layout:fixed; }
   .tl-table th, .tl-table td { border:1px solid var(--line); vertical-align:top; }
-  .tl-corner { background:var(--ink); color:#fff; width:130px; min-width:130px; padding:8px; font-size:12px; text-align:left; }
-  .tl-yr { background:var(--ink); color:#fff; padding:8px; font-size:13px; font-family:Georgia,serif; min-width:150px; }
-  .tl-lane { background:#EEF0F6; color:var(--ink); font-size:12.5px; font-weight:600; padding:8px; text-align:left; width:130px; min-width:130px; }
+  .tl-corner { background:var(--ink); color:#fff; width:150px; min-width:150px; padding:10px; font-size:13.5px; text-align:left; }
+  .tl-yr { background:var(--ink); color:#fff; padding:10px; font-size:15.5px; font-family:Georgia,serif; min-width:190px; }
+  .tl-lane { background:#EEF0F6; color:var(--ink); font-size:14px; font-weight:600; padding:10px; text-align:left; width:150px; min-width:150px; }
   .tl-table td { padding:4px; background:var(--card); }
   .tl-empty { background:var(--paper) !important; }
-  .tl-ev { font-size:11px; line-height:1.32; padding:3px 5px; margin:2px 0; background:#F7F8FA; border-radius:3px; color:#243049; }
-  .tl-mo { display:inline-block; background:#E3E6EC; border-radius:3px; padding:0 4px; margin-right:4px; font-weight:700; color:var(--ink); font-size:10px; }
-  .foot { color:var(--muted); font-size:.78rem; line-height:1.5; border-top:1px solid var(--line);
+  .tl-ev { font-size:13.5px; line-height:1.45; padding:6px 8px; margin:4px 0; background:#F7F8FA; border-radius:3px; color:#243049; }
+  .tl-mo { display:inline-block; background:#E3E6EC; border-radius:3px; padding:1px 6px; margin-right:5px; font-weight:700; color:var(--ink); font-size:12px; }
+  .foot { color:var(--muted); font-size:.85rem; line-height:1.5; border-top:1px solid var(--line);
           padding-top:.9rem; margin-top:1.6rem; }
 </style>
 """, unsafe_allow_html=True)
@@ -75,6 +95,11 @@ CAT_COLOR = {
 
 # stage palette, shared by the map and the status pills
 STAGE_COLOR = {"In Force": "#1B7A5A", "Draft": "#C77A16", "Conceptual": "#3B5FA8"}
+# self-explaining legend labels, so the map needs no separate colour key
+STAGE_LABEL = {"In Force": "In force",
+               "Draft": "Draft / legislated, not yet in force",
+               "Conceptual": "Conceptual"}
+LEGEND_COLOR = {STAGE_LABEL[k]: v for k, v in STAGE_COLOR.items()}
 STAGE_RANK = {"In Force": 3, "Draft": 2, "Conceptual": 1}
 MONTHS = {"01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr", "05": "May", "06": "Jun",
           "07": "Jul", "08": "Aug", "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"}
@@ -97,6 +122,26 @@ ISO3 = {
     "Chinese Taipei": ["TWN"],
     "Canada": ["CAN"],
 }
+
+
+def html_table(headers, rows, max_height=None, first_col_sticky=False):
+    """Render a real DOM table. st.dataframe paints to canvas, so its text can't
+    be resized by CSS; these stay readable and let the scope-note column wrap."""
+    import html as _h
+    th = "".join(f'<th class="jur">{_h.escape(str(x))}</th>' for x in headers)
+    body = []
+    for r in rows:
+        tds = []
+        for i, cell in enumerate(r):
+            if isinstance(cell, tuple):          # (css_class, raw_html)
+                tds.append(f'<td class="{cell[0]}">{cell[1]}</td>')
+            else:
+                cls = ' class="sec"' if (first_col_sticky and i == 0) else ""
+                tds.append(f"<td{cls}>{_h.escape(str(cell))}</td>")
+        body.append("<tr>" + "".join(tds) + "</tr>")
+    style = f' style="max-height:{max_height}px"' if max_height else ""
+    st.markdown(f'<div class="dt-wrap"{style}><table class="dt"><thead><tr>{th}</tr></thead>'
+                f'<tbody>{"".join(body)}</tbody></table></div>', unsafe_allow_html=True)
 
 
 def cat_pill(cat):
@@ -241,11 +286,10 @@ if dropped:
     st.sidebar.caption(f"⚠︎ {len(dropped)} non-data row(s) in the sheet were skipped: " + ", ".join(dropped[:8]))
 
 # ---------- top metrics ----------
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Instruments shown", len(view))
+c1, c2, c3 = st.columns(3)
+c1.metric("Instruments", len(view))
 c2.metric("Jurisdictions", view["jurisdiction"].nunique())
 c3.metric("In force", (view["status_simple"] == "In Force").sum())
-c4.metric("BCAs", (view["category"] == "BCA").sum())
 
 tab0, tab1, tab2, tab3, tab4 = st.tabs(
     ["Overview", "Instruments", "Sector coverage", "Timeline", "Official sources"])
@@ -254,7 +298,6 @@ tab0, tab1, tab2, tab3, tab4 = st.tabs(
 with tab0:
     st.subheader("Overview")
     st.caption("Where border carbon measures stand, by jurisdiction. "
-               "Green = in force · Orange = draft or legislated but not yet in force · Blue = conceptual. "
                "Use the sidebar filters to narrow the map.")
 
     if view.empty:
@@ -269,7 +312,8 @@ with tab0:
                 cur = recs.get(iso)
                 if cur is None or rank > cur["rank"]:
                     recs[iso] = {"iso": iso, "Jurisdiction": r["jurisdiction"],
-                                 "Stage": r["status_simple"], "rank": rank,
+                                 "Stage": STAGE_LABEL.get(r["status_simple"], r["status_simple"]),
+                                 "rank": rank,
                                  "measures": list(cur["measures"]) if cur else []}
                 recs[iso]["measures"].append(r["instrument_name"])
         mapdf = pd.DataFrame([{**v, "Measures": " · ".join(v["measures"])} for v in recs.values()])
@@ -281,8 +325,9 @@ with tab0:
             import plotly.express as px
             fig = px.choropleth(
                 mapdf, locations="iso", locationmode="ISO-3", color="Stage",
-                color_discrete_map=STAGE_COLOR,
-                category_orders={"Stage": ["In Force", "Draft", "Conceptual"]},
+                color_discrete_map=LEGEND_COLOR,
+                category_orders={"Stage": [STAGE_LABEL["In Force"], STAGE_LABEL["Draft"],
+                                           STAGE_LABEL["Conceptual"]]},
                 hover_name="Jurisdiction",
                 hover_data={"iso": False, "Stage": True, "Measures": True},
             )
@@ -292,9 +337,10 @@ with tab0:
             fig.update_layout(
                 margin=dict(l=0, r=0, t=0, b=0), height=520,
                 paper_bgcolor="rgba(0,0,0,0)", geo_bgcolor="rgba(0,0,0,0)",
-                legend=dict(orientation="h", yanchor="bottom", y=-0.04,
-                            xanchor="left", x=0, title_text=""),
-                font=dict(family="Arial", size=12, color="#243049"),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.06,
+                            xanchor="left", x=0, title_text="",
+                            font=dict(size=14)),
+                font=dict(family="Arial", size=14, color="#243049"),
             )
             st.plotly_chart(fig, use_container_width=True)
         except ModuleNotFoundError:
@@ -323,12 +369,14 @@ with tab0:
                 "Implementation/Coming into Force Date": "In force / from",
                 "official_url": "Official link",
             })
-            cols = [c for c in ["Jurisdiction", "Measure", "Nature of measure", "Status", "Stage",
-                                "In force / from", "Sectors covered", "Official link"] if c in ov.columns]
-            st.dataframe(
-                ov[cols], hide_index=True, use_container_width=True,
-                column_config={"Official link": st.column_config.LinkColumn("Official link", display_text="open ↗")},
-            )
+            cols = [c for c in ["Jurisdiction", "Measure", "Status",
+                                "In force / from", "Sectors covered"] if c in ov.columns]
+            rows = []
+            for _, x in ov.iterrows():
+                rows.append([x.get(c, "") for c in cols] +
+                            [("", f'<a href="{x["Official link"]}" target="_blank">open ↗</a>'
+                                  if x.get("Official link") else "")])
+            html_table(cols + ["Official link"], rows, max_height=520)
 
 # ---- TAB 1: instrument cards ----
 with tab1:
@@ -443,8 +491,10 @@ with tab2:
                 seen.add(c); order.append(c)
         order += [c for c in mat.columns if c not in seen]
         mat = mat[order]
-        mat = (mat > 0).replace({True: "●", False: ""})
-        st.dataframe(mat, use_container_width=True)
+        mat = mat > 0
+        rows = [[sector] + [("tick", "✓" if mat.loc[sector, c] else "") for c in order]
+                for sector in mat.index]
+        html_table(["Sector"] + order, rows, max_height=560, first_col_sticky=True)
 
         with st.expander("Show HS codes behind each sector"):
             rank = {j: i for i, j in enumerate(order)}
@@ -454,15 +504,7 @@ with tab2:
                     .drop(columns="_o")
                     .rename(columns={"sector": "Sector", "hs_code": "HS code",
                                      "scope_note": "Scope note"}))
-            st.dataframe(
-                hs, hide_index=True, use_container_width=True, height=560,
-                column_config={
-                    "Jurisdiction": st.column_config.TextColumn("Jurisdiction", width="small"),
-                    "Sector": st.column_config.TextColumn("Sector", width="small"),
-                    "HS code": st.column_config.TextColumn("HS code", width="small"),
-                    "Scope note": st.column_config.TextColumn("Scope note", width="large"),
-                },
-            )
+            html_table(list(hs.columns), hs.values.tolist(), max_height=600)
 
 # ---- TAB 3: timeline ----
 with tab3:
@@ -523,8 +565,9 @@ with tab3:
                 col = CAT_COLOR.get(r["category"], "#1D2657")
                 when = f'{r["mon"]} {r["year"]}'.strip()
                 link = f' — <a href="{r["official_url"]}" target="_blank">source ↗</a>' if r.get("official_url") else ""
-                st.markdown(f'<div style="border-left:3px solid {col};padding:.15rem 0 .55rem .8rem;margin-left:.3rem">'
-                            f'<b>{when}</b> &nbsp;·&nbsp; <span style="color:#7A6F5B">{r["jurisdiction"]}</span><br>'
+                st.markdown(f'<div style="border-left:3px solid {col};padding:.25rem 0 .7rem .9rem;'
+                            f'margin-left:.3rem;font-size:1rem;line-height:1.55">'
+                            f'<b>{when}</b> &nbsp;·&nbsp; <span style="color:var(--muted)">{r["jurisdiction"]}</span><br>'
                             f'{r["event"]}{link}</div>', unsafe_allow_html=True)
 
 # ---- TAB 4: sources ----
@@ -538,11 +581,12 @@ with tab4:
         msrc["Jurisdiction"] = msrc["instrument_id"].map(JMAP)
         msrc["link"] = msrc["official_url"]
         msrc["_o"] = msrc["Jurisdiction"].map({j: i for i, j in enumerate(JUR_ORDER)}).fillna(999)
-        show = (msrc.sort_values(["_o", "date"])
-                    [["Jurisdiction", "doc_title", "doc_type", "date", "link"]]
-                    .rename(columns={"doc_title": "Document", "doc_type": "Type", "date": "Year"}))
-        st.dataframe(show, hide_index=True, use_container_width=True,
-                     column_config={"link": st.column_config.LinkColumn("Official URL", display_text="open ↗")})
+        show = msrc.sort_values(["_o", "date"])
+        rows = [[x["Jurisdiction"], x["doc_title"], x["doc_type"], x["date"],
+                 ("", f'<a href="{x["link"]}" target="_blank">open ↗</a>' if x.get("link") else "")]
+                for _, x in show.iterrows()]
+        html_table(["Jurisdiction", "Document", "Type", "Year", "Official URL"],
+                   rows, max_height=620)
 
 # ---------- footer ----------
 st.markdown(
