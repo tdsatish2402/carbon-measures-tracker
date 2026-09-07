@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 
-DATA_FILE = "BCA_tracker.xlsx"
+DATA_FILE = "BCA_tracker_only_BCA.xlsx"
 EXAMPLE_ID = "XX-EXAMPLE"
 
 st.set_page_config(page_title="Carbon Measures Tracker", layout="wide",
@@ -52,12 +52,34 @@ def cat_pill(cat):
     return f'<span class="pill" style="background:{c}22;color:{c};border:1px solid {c}55">{cat}</span>'
 
 # ---------- load + clean ----------
+# --- column shim -------------------------------------------------------------
+# The workbook uses human-readable headers; the rest of this app uses short keys.
+# Rename once, here, so nothing downstream has to change.
+COLMAP = {
+    "Entry into Force": "Implementation/Coming into Force Date",
+    "Object and Purpose": "object_and_purpose",
+    "Third Country Adjustment": "third_country_adjustment",
+    "Default Values": "default_values",
+    "De Minimis Threshold": "de_minimis",
+    "Calculation": "calculation",
+    "Revenue Use": "revenue_use",
+    "One Line Summary of the Measure": "notes",
+    "Scope 1 Coverage": "scope1",
+    "Scope 2 Coverage": "scope2",
+    "Scope 3 Coverage": "scope3",
+    "Other Scope Coverage": "scope_other",
+}
+
 @st.cache_data
 def load():
     xl = pd.ExcelFile(DATA_FILE)
     def rd(tab): return pd.read_excel(DATA_FILE, tab, header=1) if tab in xl.sheet_names else pd.DataFrame()
     inst = rd("Instruments"); sec = rd("Sectors"); ev = rd("Events")
+    if not inst.empty:
+        inst.columns = [str(c).strip() for c in inst.columns]
+        inst = inst.rename(columns=COLMAP)
     src = rd("Sources"); catleg = rd("Category_legend")
+    scopeleg = rd("Scope_legend"); watch = rd("Watchlist"); multi = rd("Multilateral")
     statleg = rd("Status_legend"); secleg = rd("Sector_legend"); meth = rd("Methodology")
 
     valid_cats = set(catleg["category_value"].dropna()) if not catleg.empty else set()
@@ -87,9 +109,9 @@ def load():
             d.dropna(how="all", inplace=True)
             if "instrument_id" in d:
                 d.drop(d[d["instrument_id"] == EXAMPLE_ID].index, inplace=True)
-    return inst, sec, ev, src, catleg, statleg, secleg, meth, dropped
+    return inst, sec, ev, src, catleg, statleg, secleg, meth, dropped, scopeleg, watch, multi
 
-inst, sec, ev, src, catleg, statleg, secleg, meth, dropped = load()
+inst, sec, ev, src, catleg, statleg, secleg, meth, dropped, scopeleg, watch, multi = load()
 
 # ---------- header ----------
 st.markdown('<div class="eyebrow">Trade &amp; Climate · Policy Registry</div>', unsafe_allow_html=True)
@@ -118,8 +140,9 @@ c2.metric("Jurisdictions", view["jurisdiction"].nunique())
 c3.metric("In force", (view["status"] == "In force / operational").sum())
 c4.metric("BCAs", (view["category"] == "BCA").sum())
 
-tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    ["Overview", "Instruments", "Sector coverage", "Timeline", "Official sources", "Methodology"])
+tab0, tab1, tab2, tab3, tab4, tab6, tab7, tab5 = st.tabs(
+    ["Overview", "Instruments", "Sector coverage", "Timeline", "Official sources",
+     "Watchlist", "Multilateral", "Methodology"])
 
 # ---- TAB 0: overview register (clean flat table) ----
 with tab0:
@@ -140,10 +163,11 @@ with tab0:
             "instrument_name": "Measure",
             "category": "Nature of measure",
             "status": "Status",
+            "status_simple": "Stage",
             "Implementation/Coming into Force Date": "In force / from",
             "official_url": "Official link",
         })
-        cols = ["Jurisdiction", "Measure", "Nature of measure", "Status",
+        cols = ["Jurisdiction", "Measure", "Nature of measure", "Status", "Stage",
                 "In force / from", "Sectors covered", "Official link"]
         cols = [c for c in cols if c in ov.columns]
         st.dataframe(
@@ -185,10 +209,15 @@ with tab1:
                 if impl: st.markdown(f'<div class="lab">Implementation / in force</div><div class="val">{impl}</div>', unsafe_allow_html=True)
                 if r.get("object_and_purpose"):
                     st.markdown(f'<div class="lab">Object &amp; purpose</div><div class="val">{r["object_and_purpose"]}</div>', unsafe_allow_html=True)
+                sc = st.columns(3)
+                for col, (lab, key) in zip(sc, [("Scope 1","scope1"), ("Scope 2","scope2"), ("Scope 3","scope3")]):
+                    col.markdown(f'<div class="lab">{lab}</div><div class="val">{r.get(key,"")}</div>', unsafe_allow_html=True)
+                if r.get("scope_other"):
+                    st.markdown(f'<div class="lab">Other scope notes</div><div class="val">{r["scope_other"]}</div>', unsafe_allow_html=True)
                 cc = st.columns(3)
-                for col, (lab, key) in zip(cc, [("Emissions scope","emissions_scope"),
-                                                ("3rd-country adjustment","third_country_adjustment"),
-                                                ("Default values","default_values")]):
+                for col, (lab, key) in zip(cc, [("3rd-country adjustment","third_country_adjustment"),
+                                                ("Default values","default_values"),
+                                                ("De minimis threshold","de_minimis")]):
                     col.markdown(f'<div class="lab">{lab}</div><div class="val">{r.get(key,"")}</div>', unsafe_allow_html=True)
                 if r.get("calculation"):
                     st.markdown(f'<div class="lab">Calculation</div><div class="val">{r["calculation"]}</div>', unsafe_allow_html=True)
@@ -295,6 +324,28 @@ with tab4:
         st.dataframe(show, hide_index=True, use_container_width=True,
                      column_config={"link": st.column_config.LinkColumn("Official URL")})
 
+# ---- TAB 6: watchlist (jurisdictions checked, no instrument yet) ----
+with tab6:
+    st.subheader("Watchlist")
+    st.caption("Jurisdictions checked that do not (yet) have a border carbon adjustment. "
+               "Recorded so the negative finding is auditable. Not affected by the sidebar filters.")
+    if watch.empty:
+        st.info("Watchlist tab not found in the workbook.")
+    else:
+        st.dataframe(watch, hide_index=True, use_container_width=True,
+                     column_config={"source_url": st.column_config.LinkColumn("Source", display_text="open ↗")})
+
+# ---- TAB 7: multilateral landscape ----
+with tab7:
+    st.subheader("Multilateral landscape")
+    st.caption("WTO discussions and disputes, standards work, and cooperation forums. Not instruments, "
+               "so they sit outside the register. Not affected by the sidebar filters.")
+    if multi.empty:
+        st.info("Multilateral tab not found in the workbook.")
+    else:
+        st.dataframe(multi, hide_index=True, use_container_width=True,
+                     column_config={"source_url": st.column_config.LinkColumn("Source", display_text="open ↗")})
+
 # ---- TAB 5: methodology ----
 with tab5:
     st.subheader("Methodology & attribution")
@@ -303,6 +354,12 @@ with tab5:
     else:
         for _, r in meth.iterrows():
             st.markdown(f'<div class="lab">{r["item"]}</div><div class="val">{r["detail"]}</div>', unsafe_allow_html=True)
+    if not scopeleg.empty:
+        st.markdown("---")
+        st.markdown("#### Scope taxonomy")
+        st.caption("The Scope 1/2/3 labels used in the register are a comparability overlay, not the legal test. "
+                   "Each instrument defines embedded or embodied emissions in its own methodology annex.")
+        st.dataframe(scopeleg, hide_index=True, use_container_width=True)
 
 st.markdown("---")
 st.caption("Independent tracker · built with Streamlit · data maintained in a version-controlled spreadsheet. Not affiliated with or endorsed by any organisation listed.")
