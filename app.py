@@ -23,48 +23,58 @@ st.set_page_config(page_title="BCA Tracker", layout="wide",
 # ---------- styling (restrained; Streamlit limits raw HTML) ----------
 st.markdown("""
 <style>
-  /* --ink drives headings, timeline header bars and lane labels.
-     Current value is the original teal. To match the Trade Law Observatory
-     wordmark instead, swap it for the navy #1D2657 or the purple #3F106E. */
-  :root { --ink:#0E3B43; --paper:#FBF8F2; --line:#E5DFD3; }
+  /* Palette taken from the Trade Law Observatory wordmark: navy --ink,
+     purple --accent, gold --gold. --paper is a neutral near-white (the old
+     cream read as pink on screen). Change --ink here to restyle throughout. */
+  :root { --ink:#1D2657; --accent:#3F106E; --gold:#C9A227;
+          --paper:#F7F8FA; --card:#FFFFFF; --line:#E3E6EC; --muted:#5B6478; }
   .stApp { background:var(--paper); }
+  [data-testid="stHeader"] { background:transparent; }
   h1,h2,h3 { color:var(--ink); font-family:Georgia,'Times New Roman',serif; letter-spacing:-.2px; }
-  .cardwrap { border:1px solid var(--line); border-radius:6px; padding:1rem 1.15rem;
-              background:#fff; margin-bottom:1.1rem; }
+  .cardwrap { border:1px solid var(--line); border-radius:8px; padding:1.1rem 1.25rem;
+              background:var(--card); margin-bottom:1.15rem;
+              box-shadow:0 1px 2px rgba(29,38,87,.05); }
   .pill { display:inline-block; padding:.12rem .55rem; border-radius:999px;
           font-size:.72rem; font-weight:700; letter-spacing:.02em; }
-  .lab { color:#7A6F5B; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em;
+  .lab { color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.08em;
          font-weight:700; margin-top:.5rem; }
-  .val { color:#22303a; font-size:.92rem; margin-bottom:.2rem; }
-  a { color:#1668a6; }
+  .val { color:#243049; font-size:.92rem; line-height:1.55; margin-bottom:.2rem; }
+  a { color:var(--accent); }
   .stDataFrame { border:1px solid var(--line); }
+  [data-testid="stMetricValue"] { color:var(--ink); font-family:Georgia,serif; }
+  [data-testid="stMetricLabel"] { color:var(--muted); }
+  .stTabs [aria-selected="true"] { color:var(--accent) !important; }
+  .logo-rule { border:0; border-top:2px solid var(--gold); width:230px;
+               margin:.55rem 0 1.1rem; opacity:.85; }
   /* breathing room between the collapsible sections on instrument cards */
-  [data-testid="stExpander"] { margin-bottom:.6rem; border-radius:5px; }
+  [data-testid="stExpander"] { margin-bottom:.6rem; border-radius:6px;
+                               border:1px solid var(--line); background:var(--card); }
   [data-testid="stExpander"] summary { font-size:.86rem; font-weight:600; color:var(--ink); }
   .tl-scroll { overflow-x:auto; border:1px solid var(--line); border-radius:6px; }
   .tl-table { border-collapse:collapse; width:100%; table-layout:fixed; }
   .tl-table th, .tl-table td { border:1px solid var(--line); vertical-align:top; }
   .tl-corner { background:var(--ink); color:#fff; width:130px; min-width:130px; padding:8px; font-size:12px; text-align:left; }
   .tl-yr { background:var(--ink); color:#fff; padding:8px; font-size:13px; font-family:Georgia,serif; min-width:150px; }
-  .tl-lane { background:#F3EEE4; color:var(--ink); font-size:12.5px; font-weight:600; padding:8px; text-align:left; width:130px; min-width:130px; }
-  .tl-table td { padding:4px; background:#fff; }
+  .tl-lane { background:#EEF0F6; color:var(--ink); font-size:12.5px; font-weight:600; padding:8px; text-align:left; width:130px; min-width:130px; }
+  .tl-table td { padding:4px; background:var(--card); }
   .tl-empty { background:var(--paper) !important; }
-  .tl-ev { font-size:11px; line-height:1.32; padding:3px 5px; margin:2px 0; background:#fafafa; border-radius:2px; color:#33403a; }
-  .tl-mo { display:inline-block; background:#eee; border-radius:3px; padding:0 4px; margin-right:4px; font-weight:700; color:#555; font-size:10px; }
-  .foot { color:#7A6F5B; font-size:.78rem; line-height:1.5; border-top:1px solid var(--line);
+  .tl-ev { font-size:11px; line-height:1.32; padding:3px 5px; margin:2px 0; background:#F7F8FA; border-radius:3px; color:#243049; }
+  .tl-mo { display:inline-block; background:#E3E6EC; border-radius:3px; padding:0 4px; margin-right:4px; font-weight:700; color:var(--ink); font-size:10px; }
+  .foot { color:var(--muted); font-size:.78rem; line-height:1.5; border-top:1px solid var(--line);
           padding-top:.9rem; margin-top:1.6rem; }
 </style>
 """, unsafe_allow_html=True)
 
+# category colours, drawn from the wordmark's navy/purple/gold
 CAT_COLOR = {
-    "BCA": "#0E3B43",
-    "Domestic carbon pricing": "#8A5A2B",
-    "Enabling law": "#5B6B2E",
-    "Proposal": "#6E5773",
+    "BCA": "#1D2657",
+    "Domestic carbon pricing": "#8A6D1F",
+    "Enabling law": "#3F106E",
+    "Proposal": "#6B7280",
 }
 
 # stage palette, shared by the map and the status pills
-STAGE_COLOR = {"In Force": "#1F7A5A", "Draft": "#D98324", "Conceptual": "#3C7DA6"}
+STAGE_COLOR = {"In Force": "#1B7A5A", "Draft": "#C77A16", "Conceptual": "#3B5FA8"}
 STAGE_RANK = {"In Force": 3, "Draft": 2, "Conceptual": 1}
 MONTHS = {"01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr", "05": "May", "06": "Jun",
           "07": "Jul", "08": "Aug", "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"}
@@ -94,9 +104,11 @@ def cat_pill(cat):
     return f'<span class="pill" style="background:{c}22;color:{c};border:1px solid {c}55">{cat}</span>'
 
 
-def stage_pill(stage):
-    c = STAGE_COLOR.get(stage, "#555")
-    return f'<span class="pill" style="background:{c}22;color:{c};border:1px solid {c}66">{stage}</span>'
+def stage_pill(text, stage=None):
+    """Render `text` tinted by its stage. Pass stage separately to show the full
+    status wording (e.g. "In force / operational") in the stage's colour."""
+    c = STAGE_COLOR.get(stage if stage is not None else text, "#5B6478")
+    return f'<span class="pill" style="background:{c}1F;color:{c};border:1px solid {c}66">{text}</span>'
 
 
 # ---------- column shim -------------------------------------------------------
@@ -166,18 +178,49 @@ CMAP = dict(zip(inst["instrument_id"], inst["category"]))
 JUR_ORDER = list(dict.fromkeys(inst["jurisdiction"]))
 
 
+NMAP = dict(zip(inst["instrument_id"], inst["instrument_name"]))
+# sheet row order, so columns follow the register rather than the alphabet
+ID_ORDER = {iid: n for n, iid in enumerate(inst["instrument_id"])}
+
+
+def short_name(iid):
+    """'Foreign Pollution Fee Act of 2025 (S. 1325, ...)' -> 'Foreign Pollution Fee Act'"""
+    n = str(NMAP.get(iid, iid)).split(" of 20")[0].split(" (")[0].strip()
+    return n if len(n) <= 34 else n[:31].rstrip() + "..."
+
+
 def label_for(ids):
-    """Readable column/row labels: jurisdiction, disambiguated only when a
-    jurisdiction has more than one instrument in the current selection."""
+    """Readable column/row labels: jurisdiction alone, or jurisdiction plus a
+    short instrument name when one jurisdiction has several instruments.
+    Never shows a raw instrument_id."""
     jur = {i: JMAP.get(i, i) for i in ids}
     counts = Counter(jur.values())
-    return {i: (j if counts[j] == 1 else f"{j} ({i})") for i, j in jur.items()}
+    return {i: (j if counts[j] == 1 else f"{j} — {short_name(i)}") for i, j in jur.items()}
 
 
 # ---------- header ----------
+@st.cache_data
+def prep_logo(path):
+    """Knock the white background out of the wordmark and trim the margin, so it
+    sits on the page rather than in a white box. Falls back to the raw file if
+    Pillow/numpy are unavailable."""
+    try:
+        import numpy as np
+        from PIL import Image
+        a = np.array(Image.open(path).convert("RGBA"))
+        lum = a[..., :3].astype(int).max(axis=2)
+        alpha = np.clip((245 - lum) * (255 / 45.0), 0, 255)
+        a[..., 3] = np.maximum(alpha, np.where(lum < 200, 255, 0)).astype(np.uint8)
+        im = Image.fromarray(a, "RGBA")
+        return im.crop(im.getbbox())
+    except Exception:
+        return path
+
+
 logo = next((f for f in LOGO_CANDIDATES if os.path.exists(f)), None)
 if logo:
-    st.image(logo, width=LOGO_WIDTH)
+    st.image(prep_logo(logo), width=LOGO_WIDTH)
+    st.markdown('<hr class="logo-rule">', unsafe_allow_html=True)
 st.title("BCA Tracker")
 st.caption("Tracking border carbon measures worldwide.")
 
@@ -244,14 +287,14 @@ with tab0:
                 hover_data={"iso": False, "Stage": True, "Measures": True},
             )
             fig.update_geos(showframe=False, showcoastlines=False, showcountries=True,
-                            countrycolor="#E5DFD3", landcolor="#F1ECE1", lakecolor="#FBF8F2",
+                            countrycolor="#D9DEE8", landcolor="#EBEEF4", lakecolor="#F7F8FA",
                             bgcolor="rgba(0,0,0,0)", projection_type="natural earth")
             fig.update_layout(
                 margin=dict(l=0, r=0, t=0, b=0), height=520,
                 paper_bgcolor="rgba(0,0,0,0)", geo_bgcolor="rgba(0,0,0,0)",
                 legend=dict(orientation="h", yanchor="bottom", y=-0.04,
                             xanchor="left", x=0, title_text=""),
-                font=dict(family="Arial", size=12, color="#22303a"),
+                font=dict(family="Arial", size=12, color="#243049"),
             )
             st.plotly_chart(fig, use_container_width=True)
         except ModuleNotFoundError:
@@ -322,9 +365,10 @@ with tab1:
             for _, r in show.iterrows():
                 st.markdown('<div class="cardwrap">', unsafe_allow_html=True)
                 st.markdown(f'### {r["jurisdiction"]} — {r["instrument_name"]}')
+                # one status pill only, tinted by its stage — the separate
+                # "In Force" pill duplicated what "In force / operational" says
                 st.markdown(cat_pill(r["category"]) + "&nbsp;&nbsp;" +
-                            stage_pill(r.get("status_simple", "")) +
-                            f'&nbsp;&nbsp;<span class="pill" style="background:#eee;color:#333">{r["status"]}</span>',
+                            stage_pill(r["status"], r.get("status_simple", "")),
                             unsafe_allow_html=True)
                 # one-line summary sits directly under the title, always visible
                 if r.get("notes"):
@@ -391,9 +435,13 @@ with tab2:
         m = msec.copy()
         m["Jurisdiction"] = m["instrument_id"].map(lab)
         mat = pd.crosstab(m["sector"], m["Jurisdiction"])
-        # order columns by the sheet's jurisdiction order, not alphabetically
-        order = [c for j in JUR_ORDER for c in mat.columns if c == j or c.startswith(j + " (")]
-        order += [c for c in mat.columns if c not in order]
+        # order columns by the sheet's instrument order, not alphabetically
+        seen, order = set(), []
+        for iid in sorted(lab, key=lambda i: ID_ORDER.get(i, 999)):
+            c = lab[iid]
+            if c in mat.columns and c not in seen:
+                seen.add(c); order.append(c)
+        order += [c for c in mat.columns if c not in seen]
         mat = mat[order]
         mat = (mat > 0).replace({True: "●", False: ""})
         st.dataframe(mat, use_container_width=True)
@@ -472,7 +520,7 @@ with tab3:
         else:
             st.caption("Every event in date order.")
             for _, r in tev.sort_values("date").iterrows():
-                col = CAT_COLOR.get(r["category"], "#0E3B43")
+                col = CAT_COLOR.get(r["category"], "#1D2657")
                 when = f'{r["mon"]} {r["year"]}'.strip()
                 link = f' — <a href="{r["official_url"]}" target="_blank">source ↗</a>' if r.get("official_url") else ""
                 st.markdown(f'<div style="border-left:3px solid {col};padding:.15rem 0 .55rem .8rem;margin-left:.3rem">'
