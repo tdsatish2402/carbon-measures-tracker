@@ -59,7 +59,11 @@ st.markdown("""
                position:sticky; left:0; background:var(--card); z-index:1;
                border-right:1px solid var(--line); }
   .dt tbody tr:nth-child(even) td.sec { background:#FAFBFD; }
-  .dt td.tick { text-align:center; color:#1B7A5A; font-size:17px; font-weight:700; }
+  .dt td.tick { text-align:center; font-size:17px; font-weight:700; }
+  .dt td.pros { text-align:center; font-size:15px; color:#93A0B5; }
+  .cvlegend { display:flex; flex-wrap:wrap; gap:1.1rem; align-items:center;
+              font-size:.9rem; color:#243049; margin:.1rem 0 .9rem; }
+  .cvlegend b { font-size:1.05rem; }
   .dt th.jur { min-width:120px; white-space:normal; }
   [data-testid="stMetricValue"] { color:var(--ink); font-family:Georgia,serif; }
   [data-testid="stMetricLabel"] { color:var(--muted); }
@@ -166,6 +170,9 @@ COLMAP = {
     "Default Values": "default_values",
     "De Minimis Threshold": "de_minimis",
     "Calculation": "calculation",
+    "Qualifying Carbon Prices": "qualifying_prices",
+    "Verification": "verification",
+    "Review and Appeal": "review_appeal",
     "Revenue Use": "revenue_use",
     "One Line Summary of the Measure": "notes",
     "Scope 1 Coverage": "scope1",
@@ -184,7 +191,7 @@ def load():
     if not inst.empty:
         inst.columns = [str(c).strip() for c in inst.columns]
         inst = inst.rename(columns=COLMAP)
-    src = rd("Sources"); catleg = rd("Category_legend")
+    src = rd("Sources"); catleg = rd("Category_legend"); link = rd("Carbon_price_linkage")
 
     valid_cats = set(catleg["category_value"].dropna()) if not catleg.empty else set()
 
@@ -211,14 +218,15 @@ def load():
             d.dropna(how="all", inplace=True)
             if "instrument_id" in d:
                 d.drop(d[d["instrument_id"] == EXAMPLE_ID].index, inplace=True)
-    return inst, sec, ev, src, dropped
+    return inst, sec, ev, src, link, dropped
 
 
-inst, sec, ev, src, dropped = load()
+inst, sec, ev, src, link, dropped = load()
 
 # instrument_id -> jurisdiction, used wherever a raw code would otherwise be shown
 JMAP = dict(zip(inst["instrument_id"], inst["jurisdiction"]))
 CMAP = dict(zip(inst["instrument_id"], inst["category"]))
+SMAP = dict(zip(inst["instrument_id"], inst["status_simple"]))
 # sheet order = display order (EU, UK, Australia, ...)
 JUR_ORDER = list(dict.fromkeys(inst["jurisdiction"]))
 
@@ -291,8 +299,9 @@ c1.metric("Instruments", len(view))
 c2.metric("Jurisdictions", view["jurisdiction"].nunique())
 c3.metric("In force", (view["status_simple"] == "In Force").sum())
 
-tab0, tab1, tab2, tab3, tab4 = st.tabs(
-    ["Overview", "Instruments", "Sector coverage", "Timeline", "Official sources"])
+tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs(
+    ["Overview", "Instruments", "Sector coverage", "Carbon price linkage",
+     "Timeline", "Official sources"])
 
 # ---- TAB 0: overview map ----
 with tab0:
@@ -353,9 +362,10 @@ with tab0:
 
         # sectors per instrument, collapsed to one cell
         def sectors_for(iid):
+            """In-scope sectors only — prospective ones are not coverage."""
             if sec.empty: return ""
-            s = sec[sec["instrument_id"] == iid]["sector"].dropna().astype(str).unique()
-            return ", ".join(sorted(s))
+            d = sec[(sec["instrument_id"] == iid) & (sec["coverage"] == "Current scope")]
+            return ", ".join(sorted(d["sector"].dropna().astype(str).unique()))
 
         with st.expander("Show as table"):
             ov = view.copy()
@@ -454,6 +464,24 @@ with tab1:
                     with st.expander("Calculation", expanded=OPEN):
                         val_block(r["calculation"])
 
+                if r.get("qualifying_prices"):
+                    with st.expander("Qualifying third-country carbon prices", expanded=OPEN):
+                        val_block(r["qualifying_prices"])
+                        n = len(link[(link["instrument_id"] == r["instrument_id"]) &
+                                     (link["recognition_status"].astype(str)
+                                      .str.startswith("Recognised"))]) if not link.empty else 0
+                        if n:
+                            st.caption(f"{n} scheme(s) formally recognised — see the "
+                                       "Carbon price linkage tab for the list.")
+
+                if r.get("verification"):
+                    with st.expander("Verification", expanded=OPEN):
+                        val_block(r["verification"])
+
+                if r.get("review_appeal"):
+                    with st.expander("Review & appeal — if an importer disputes an assessment", expanded=OPEN):
+                        val_block(r["review_appeal"])
+
                 if r.get("revenue_use"):
                     with st.expander("Revenue use", expanded=OPEN):
                         val_block(r["revenue_use"])
@@ -461,7 +489,14 @@ with tab1:
                 msec = sec[sec["instrument_id"] == r["instrument_id"]] if not sec.empty else pd.DataFrame()
                 if not msec.empty:
                     with st.expander("Sectors covered", expanded=OPEN):
-                        val_block(" · ".join(sorted(msec["sector"].dropna().astype(str).unique())))
+                        cur = sorted(msec[msec["coverage"] == "Current scope"]["sector"].astype(str).unique())
+                        pro = sorted(msec[msec["coverage"] == "Prospective"]["sector"].astype(str).unique())
+                        st.markdown('<div class="lab">In scope</div>'
+                                    f'<div class="val">{" · ".join(cur) if cur else "None defined yet"}</div>',
+                                    unsafe_allow_html=True)
+                        if pro:
+                            st.markdown('<div class="lab">Flagged for possible future addition — not in scope</div>'
+                                        f'<div class="val">{" · ".join(pro)}</div>', unsafe_allow_html=True)
 
                 if r.get("official_url"):
                     with st.expander("Primary source", expanded=OPEN):
@@ -491,20 +526,67 @@ with tab2:
                 seen.add(c); order.append(c)
         order += [c for c in mat.columns if c not in seen]
         mat = mat[order]
-        mat = mat > 0
-        rows = [[sector] + [("tick", "✓" if mat.loc[sector, c] else "") for c in order]
-                for sector in mat.index]
+        # two axes at once: SYMBOL = in scope now vs flagged for later,
+        # COLOUR = how far along the instrument itself is.
+        cover = {(lab[r["instrument_id"]], r["sector"]): r["coverage"]
+                 for _, r in m.iterrows()}
+        stage_of = {lab[i]: STAGE_COLOR.get(SMAP.get(i, ""), "#5B6478") for i in lab}
+
+        def cell(sector, col):
+            cv = cover.get((col, sector))
+            if cv == "Current scope":
+                return ("tick", f'<span style="color:{stage_of[col]}">✓</span>')
+            if cv == "Prospective":
+                return ("pros", "○")
+            return ("tick", "")
+
+        rows = [[sector] + [cell(sector, c) for c in order] for sector in mat.index]
         html_table(["Sector"] + order, rows, max_height=560, first_col_sticky=True)
+
+        keys = "".join(
+            f'<span><b style="color:{STAGE_COLOR[k]}">✓</b> in scope — {v.lower()}</span>'
+            for k, v in STAGE_LABEL.items() if k in set(view["status_simple"]))
+        st.markdown(
+            f'<div class="cvlegend">{keys}'
+            '<span><b style="color:#93A0B5">○</b> flagged for possible future addition — not in scope today</span>'
+            '</div>', unsafe_allow_html=True)
+        st.caption("Tick colour shows how far the instrument itself has progressed; the symbol shows whether "
+                   "the sector is covered now. Australia's cement tick is blue because the whole measure is "
+                   "still only a recommendation.")
 
         with st.expander("Show HS codes behind each sector"):
             rank = {j: i for i, j in enumerate(order)}
-            hs = m[["Jurisdiction", "sector", "hs_code", "scope_note"]].copy()
+            hs = m[["Jurisdiction", "sector", "coverage", "hs_code", "scope_note"]].copy()
             hs["_o"] = hs["Jurisdiction"].map(rank).fillna(999)
-            hs = (hs.sort_values(["_o", "sector"])
-                    .drop(columns="_o")
-                    .rename(columns={"sector": "Sector", "hs_code": "HS code",
-                                     "scope_note": "Scope note"}))
+            hs["_c"] = (hs["coverage"] != "Current scope").astype(int)  # current first
+            hs = (hs.sort_values(["_o", "_c", "sector"])
+                    .drop(columns=["_o", "_c"])
+                    .rename(columns={"sector": "Sector", "coverage": "Coverage",
+                                     "hs_code": "HS code", "scope_note": "Scope note"}))
             html_table(list(hs.columns), hs.values.tolist(), max_height=600)
+
+# ---- TAB 5: third-country carbon price linkage ----
+with tab5:
+    st.subheader("Carbon price linkage")
+    keep_ids = set(view["instrument_id"])
+    ml = link[link["instrument_id"].isin(keep_ids)].copy() if not link.empty else pd.DataFrame()
+    if ml.empty:
+        st.info("No linkage data for the current filter.")
+    else:
+        ml["Jurisdiction"] = ml["instrument_id"].map(JMAP)
+        ml["_o"] = ml["instrument_id"].map(lambda i: ID_ORDER.get(i, 999))
+        ml = ml.sort_values(["_o", "scheme_name"])
+        rec = ml["recognition_status"].astype(str).str.startswith("Recognised")
+        st.caption(f"{int(rec.sum())} foreign carbon pricing scheme(s) formally recognised across "
+                   f"{ml.loc[rec, 'Jurisdiction'].nunique()} instrument(s). Only the UK has published an "
+                   "actual list so far; the EU's Article 9 implementing act is still a draft. "
+                   "Emissions covered by free allowances never qualify, because no effective price was paid.")
+        rows = [[x["Jurisdiction"], x["scheme_name"], x["scheme_jurisdiction"],
+                 x["recognition_status"], x["notes"],
+                 ("", f'<a href="{x["source_url"]}" target="_blank">open ↗</a>' if x.get("source_url") else "")]
+                for _, x in ml.iterrows()]
+        html_table(["Recognising instrument", "Scheme", "Scheme jurisdiction",
+                    "Status", "Notes", "Source"], rows, max_height=620)
 
 # ---- TAB 3: timeline ----
 with tab3:
