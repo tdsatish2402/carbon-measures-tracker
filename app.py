@@ -27,7 +27,8 @@ st.markdown("""
      purple --accent, gold --gold. --paper is a neutral near-white (the old
      cream read as pink on screen). Change --ink here to restyle throughout. */
   :root { --ink:#1D2657; --accent:#3F106E; --gold:#C9A227;
-          --paper:#F7F8FA; --card:#FFFFFF; --line:#E3E6EC; --muted:#5B6478; }
+          --paper:#FFFFFF; --card:#FFFFFF; --line:#E1E5EC; --muted:#5B6478;
+          --stripe:#F7F8FA; }
   html, body, [class*="css"] { font-size:17px; }
   .stApp { background:var(--paper); }
   .stApp p, .stApp li { font-size:1rem; line-height:1.6; }
@@ -54,17 +55,26 @@ st.markdown("""
            font-size:13.5px; line-height:1.35; }
   .dt td { border-top:1px solid var(--line); padding:9px 12px; vertical-align:top;
            color:#243049; line-height:1.5; }
-  .dt tbody tr:nth-child(even) td { background:#FAFBFD; }
-  .dt td.sec { font-weight:600; color:var(--ink); white-space:nowrap;
-               position:sticky; left:0; background:var(--card); z-index:1;
-               border-right:1px solid var(--line); }
-  .dt tbody tr:nth-child(even) td.sec { background:#FAFBFD; }
-  .dt td.tick { text-align:center; font-size:17px; font-weight:700; }
+  .dt tbody tr:nth-child(even) td { background:var(--stripe); }
+  .dt th { z-index:3; }
+  .dt th.corner { position:sticky; left:0; z-index:5; border-right:1px solid #ffffff40; }
+  .dt td.sec { font-weight:600; color:var(--ink); white-space:normal;
+               position:sticky; left:0; background:var(--card); z-index:2;
+               border-right:2px solid var(--line); min-width:190px; max-width:230px; }
+  .dt tbody tr:nth-child(even) td.sec { background:var(--stripe); }
+  .dt td.tick { text-align:center; font-size:17px; font-weight:700; color:#1B7A5A; }
   .dt td.pros { text-align:center; font-size:15px; color:#93A0B5; }
   .cvlegend { display:flex; flex-wrap:wrap; gap:1.1rem; align-items:center;
               font-size:.9rem; color:#243049; margin:.1rem 0 .9rem; }
   .cvlegend b { font-size:1.05rem; }
-  .dt th.jur { min-width:120px; white-space:normal; }
+  /* instrument card headers rendered as buttons: make them look like titles */
+  .cardwrap div[data-testid="stButton"] button {
+      background:transparent; border:none; padding:.1rem 0; box-shadow:none;
+      font-family:Georgia,'Times New Roman',serif; font-size:1.2rem; font-weight:600;
+      color:var(--ink); text-align:left; justify-content:flex-start; }
+  .cardwrap div[data-testid="stButton"] button:hover { color:var(--accent); background:transparent; }
+  .cardwrap div[data-testid="stButton"] button p { font-size:1.2rem; font-weight:600; }
+  .dt th.jur { min-width:104px; white-space:normal; }
   [data-testid="stMetricValue"] { color:var(--ink); font-family:Georgia,serif; }
   [data-testid="stMetricLabel"] { color:var(--muted); }
   .stTabs [aria-selected="true"] { color:var(--accent) !important; }
@@ -82,7 +92,7 @@ st.markdown("""
   .tl-lane { background:#EEF0F6; color:var(--ink); font-size:14px; font-weight:600; padding:10px; text-align:left; width:150px; min-width:150px; }
   .tl-table td { padding:4px; background:var(--card); }
   .tl-empty { background:var(--paper) !important; }
-  .tl-ev { font-size:13.5px; line-height:1.45; padding:6px 8px; margin:4px 0; background:#F7F8FA; border-radius:3px; color:#243049; }
+  .tl-ev { font-size:13.5px; line-height:1.45; padding:6px 8px; margin:4px 0; background:var(--stripe); border-radius:3px; color:#243049; }
   .tl-mo { display:inline-block; background:#E3E6EC; border-radius:3px; padding:1px 6px; margin-right:5px; font-weight:700; color:var(--ink); font-size:12px; }
   .foot { color:var(--muted); font-size:.85rem; line-height:1.5; border-top:1px solid var(--line);
           padding-top:.9rem; margin-top:1.6rem; }
@@ -132,7 +142,9 @@ def html_table(headers, rows, max_height=None, first_col_sticky=False):
     """Render a real DOM table. st.dataframe paints to canvas, so its text can't
     be resized by CSS; these stay readable and let the scope-note column wrap."""
     import html as _h
-    th = "".join(f'<th class="jur">{_h.escape(str(x))}</th>' for x in headers)
+    th = "".join(
+        f'<th class="jur{" corner" if (first_col_sticky and i == 0) else ""}">{_h.escape(str(x))}</th>'
+        for i, x in enumerate(headers))
     body = []
     for r in rows:
         tds = []
@@ -142,6 +154,7 @@ def html_table(headers, rows, max_height=None, first_col_sticky=False):
             else:
                 cls = ' class="sec"' if (first_col_sticky and i == 0) else ""
                 tds.append(f"<td{cls}>{_h.escape(str(cell))}</td>")
+        # (tuples above carry pre-escaped HTML: (css_class, html))
         body.append("<tr>" + "".join(tds) + "</tr>")
     style = f' style="max-height:{max_height}px"' if max_height else ""
     st.markdown(f'<div class="dt-wrap"{style}><table class="dt"><thead><tr>{th}</tr></thead>'
@@ -191,7 +204,7 @@ def load():
     if not inst.empty:
         inst.columns = [str(c).strip() for c in inst.columns]
         inst = inst.rename(columns=COLMAP)
-    src = rd("Sources"); catleg = rd("Category_legend"); link = rd("Carbon_price_linkage")
+    src = rd("Sources"); catleg = rd("Category_legend"); link = rd("Carbon_price_recognition")
 
     valid_cats = set(catleg["category_value"].dropna()) if not catleg.empty else set()
 
@@ -300,7 +313,7 @@ c2.metric("Jurisdictions", view["jurisdiction"].nunique())
 c3.metric("In force", (view["status_simple"] == "In Force").sum())
 
 tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs(
-    ["Overview", "Instruments", "Sector coverage", "Carbon price linkage",
+    ["Overview", "Instruments", "Sector coverage", "Carbon price recognition",
      "Timeline", "Official sources"])
 
 # ---- TAB 0: overview map ----
@@ -341,7 +354,7 @@ with tab0:
                 hover_data={"iso": False, "Stage": True, "Measures": True},
             )
             fig.update_geos(showframe=False, showcoastlines=False, showcountries=True,
-                            countrycolor="#D9DEE8", landcolor="#EBEEF4", lakecolor="#F7F8FA",
+                            countrycolor="#D9DEE8", landcolor="#EDF0F5", lakecolor="#FFFFFF",
                             bgcolor="rgba(0,0,0,0)", projection_type="natural earth")
             fig.update_layout(
                 margin=dict(l=0, r=0, t=0, b=0), height=520,
@@ -393,12 +406,20 @@ with tab1:
     if view.empty:
         st.info("No instruments match the current filters. Widen the selection in the sidebar.")
     else:
-        if "expand_all" not in st.session_state:
-            st.session_state.expand_all = False
+        # TWO independent levels. Streamlit forbids expanders inside expanders, so the
+        # card level is a session-state toggle and only the sub-sections are expanders.
+        st.session_state.setdefault("open_cards", set())
+        st.session_state.setdefault("expand_all", False)
 
-        bcol, _sp = st.columns([1, 4])
-        if bcol.button("Collapse all" if st.session_state.expand_all else "Expand all",
-                       use_container_width=True):
+        b1, b2, _sp = st.columns([1, 1, 3])
+        all_ids = list(view["instrument_id"])
+        cards_all_open = st.session_state.open_cards.issuperset(all_ids)
+        if b1.button("Collapse all instruments" if cards_all_open else "Expand all instruments",
+                     use_container_width=True):
+            st.session_state.open_cards = set() if cards_all_open else set(all_ids)
+            st.rerun()
+        if b2.button("Collapse all sections" if st.session_state.expand_all else "Expand all sections",
+                     use_container_width=True):
             st.session_state.expand_all = not st.session_state.expand_all
             st.rerun()
         OPEN = st.session_state.expand_all
@@ -421,13 +442,21 @@ with tab1:
 
         with main:
             for _, r in show.iterrows():
+                iid = r["instrument_id"]
+                is_open = iid in st.session_state.open_cards
                 st.markdown('<div class="cardwrap">', unsafe_allow_html=True)
-                st.markdown(f'### {r["jurisdiction"]} — {r["instrument_name"]}')
+                if st.button(f'{"▾" if is_open else "▸"}\u2003{r["jurisdiction"]} — {r["instrument_name"]}',
+                             key=f"card_{iid}", use_container_width=True):
+                    st.session_state.open_cards ^= {iid}
+                    st.rerun()
                 # one status pill only, tinted by its stage — the separate
                 # "In Force" pill duplicated what "In force / operational" says
                 st.markdown(cat_pill(r["category"]) + "&nbsp;&nbsp;" +
                             stage_pill(r["status"], r.get("status_simple", "")),
                             unsafe_allow_html=True)
+                if not is_open:
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    continue
                 # one-line summary sits directly under the title, always visible
                 if r.get("notes"):
                     st.markdown('<div class="val" style="font-style:italic;color:#4a4030;'
@@ -472,7 +501,7 @@ with tab1:
                                       .str.startswith("Recognised"))]) if not link.empty else 0
                         if n:
                             st.caption(f"{n} scheme(s) formally recognised — see the "
-                                       "Carbon price linkage tab for the list.")
+                                       "Carbon price recognition tab for the list.")
 
                 if r.get("verification"):
                     with st.expander("Verification", expanded=OPEN):
@@ -495,7 +524,7 @@ with tab1:
                                     f'<div class="val">{" · ".join(cur) if cur else "None defined yet"}</div>',
                                     unsafe_allow_html=True)
                         if pro:
-                            st.markdown('<div class="lab">Flagged for possible future addition — not in scope</div>'
+                            st.markdown('<div class="lab">Flagged for possible future addition</div>'
                                         f'<div class="val">{" · ".join(pro)}</div>', unsafe_allow_html=True)
 
                 if r.get("official_url"):
@@ -517,42 +546,48 @@ with tab2:
         lab = label_for(sorted(set(msec["instrument_id"])))
         m = msec.copy()
         m["Jurisdiction"] = m["instrument_id"].map(lab)
-        mat = pd.crosstab(m["sector"], m["Jurisdiction"])
-        # order columns by the sheet's instrument order, not alphabetically
+        mat = pd.crosstab(m["Jurisdiction"], m["sector"])
+        # rows follow the register order, not the alphabet
         seen, order = set(), []
         for iid in sorted(lab, key=lambda i: ID_ORDER.get(i, 999)):
             c = lab[iid]
-            if c in mat.columns and c not in seen:
+            if c in mat.index and c not in seen:
                 seen.add(c); order.append(c)
-        order += [c for c in mat.columns if c not in seen]
-        mat = mat[order]
-        # two axes at once: SYMBOL = in scope now vs flagged for later,
-        # COLOUR = how far along the instrument itself is.
+        order += [c for c in mat.index if c not in seen]
+        mat = mat.loc[order]
+        sectors = list(mat.columns)
         cover = {(lab[r["instrument_id"]], r["sector"]): r["coverage"]
                  for _, r in m.iterrows()}
-        stage_of = {lab[i]: STAGE_COLOR.get(SMAP.get(i, ""), "#5B6478") for i in lab}
+        stage_of = {lab[i]: SMAP.get(i, "") for i in lab}
 
-        def cell(sector, col):
-            cv = cover.get((col, sector))
+        def cell(jur, sector):
+            cv = cover.get((jur, sector))
             if cv == "Current scope":
-                return ("tick", f'<span style="color:{stage_of[col]}">✓</span>')
+                return ("tick", "✓")
             if cv == "Prospective":
                 return ("pros", "○")
             return ("tick", "")
 
-        rows = [[sector] + [cell(sector, c) for c in order] for sector in mat.index]
-        html_table(["Sector"] + order, rows, max_height=560, first_col_sticky=True)
+        def row_label(jur):
+            c = STAGE_COLOR.get(stage_of.get(jur, ""), "#5B6478")
+            return ("sec", f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;'
+                           f'background:{c};margin-right:8px;vertical-align:middle"></span>{jur}')
 
-        keys = "".join(
-            f'<span><b style="color:{STAGE_COLOR[k]}">✓</b> in scope — {v.lower()}</span>'
+        rows = [[row_label(j)] + [cell(j, sc) for sc in sectors] for j in order]
+        html_table(["Jurisdiction"] + sectors, rows, max_height=560, first_col_sticky=True)
+
+        dots = "".join(
+            f'<span><b style="color:{STAGE_COLOR[k]}">●</b> {v.lower()}</span>'
             for k, v in STAGE_LABEL.items() if k in set(view["status_simple"]))
         st.markdown(
-            f'<div class="cvlegend">{keys}'
-            '<span><b style="color:#93A0B5">○</b> flagged for possible future addition — not in scope today</span>'
-            '</div>', unsafe_allow_html=True)
-        st.caption("Tick colour shows how far the instrument itself has progressed; the symbol shows whether "
-                   "the sector is covered now. Australia's cement tick is blue because the whole measure is "
-                   "still only a recommendation.")
+            '<div class="cvlegend">'
+            '<span><b style="color:#1B7A5A">✓</b> in scope</span>'
+            '<span><b style="color:#93A0B5">○</b> flagged for possible future addition</span>'
+            f'{dots}</div>', unsafe_allow_html=True)
+        st.caption("Jurisdictions run down the side because that list grows fastest; sectors run across. "
+                   "The symbol shows whether a sector is covered now; the dot beside each jurisdiction shows "
+                   "how far that instrument itself has progressed. Australia's cement tick sits beside a blue "
+                   "dot because the whole measure is still only a recommendation.")
 
         with st.expander("Show HS codes behind each sector"):
             rank = {j: i for i, j in enumerate(order)}
@@ -565,28 +600,55 @@ with tab2:
                                      "hs_code": "HS code", "scope_note": "Scope note"}))
             html_table(list(hs.columns), hs.values.tolist(), max_height=600)
 
-# ---- TAB 5: third-country carbon price linkage ----
+# ---- TAB 5: recognition of third-country carbon prices ----
+# "recognition", not "linkage": linkage is a distinct legal concept (mutual recognition
+# of allowances between two trading systems, as with the EU-Swiss ETS).
 with tab5:
-    st.subheader("Carbon price linkage")
+    st.subheader("Carbon price recognition")
     keep_ids = set(view["instrument_id"])
     ml = link[link["instrument_id"].isin(keep_ids)].copy() if not link.empty else pd.DataFrame()
     if ml.empty:
-        st.info("No linkage data for the current filter.")
+        st.info("No recognition data for the current filter.")
     else:
         ml["Jurisdiction"] = ml["instrument_id"].map(JMAP)
         ml["_o"] = ml["instrument_id"].map(lambda i: ID_ORDER.get(i, 999))
         ml = ml.sort_values(["_o", "scheme_name"])
         rec = ml["recognition_status"].astype(str).str.startswith("Recognised")
-        st.caption(f"{int(rec.sum())} foreign carbon pricing scheme(s) formally recognised across "
-                   f"{ml.loc[rec, 'Jurisdiction'].nunique()} instrument(s). Only the UK has published an "
-                   "actual list so far; the EU's Article 9 implementing act is still a draft. "
-                   "Emissions covered by free allowances never qualify, because no effective price was paid.")
-        rows = [[x["Jurisdiction"], x["scheme_name"], x["scheme_jurisdiction"],
-                 x["recognition_status"], x["notes"],
-                 ("", f'<a href="{x["source_url"]}" target="_blank">open ↗</a>' if x.get("source_url") else "")]
-                for _, x in ml.iterrows()]
-        html_table(["Recognising instrument", "Scheme", "Scheme jurisdiction",
-                    "Status", "Notes", "Source"], rows, max_height=620)
+        st.caption("Which foreign carbon prices each measure will credit against its own charge. "
+                   f"{int(rec.sum())} scheme(s) are formally recognised, all by a single jurisdiction — "
+                   "the UK is so far the only one to have published a list, while the EU's Article 9 "
+                   "implementing act remains a draft. Emissions covered by free allowances never qualify, "
+                   "because no effective price was paid on them.")
+
+        st.session_state.setdefault("open_rec", set())
+        groups = list(dict.fromkeys(ml["instrument_id"]))
+        rb1, _rb = st.columns([1, 3])
+        rec_all_open = st.session_state.open_rec.issuperset(groups)
+        if rb1.button("Collapse all" if rec_all_open else "Expand all",
+                      key="rec_toggle", use_container_width=True):
+            st.session_state.open_rec = set() if rec_all_open else set(groups)
+            st.rerun()
+
+        for iid in groups:
+            g = ml[ml["instrument_id"] == iid]
+            n_rec = int(g["recognition_status"].astype(str).str.startswith("Recognised").sum())
+            head = f"{JMAP.get(iid, iid)} — " + (f"{n_rec} schemes recognised" if n_rec
+                                                 else str(g["recognition_status"].iloc[0]))
+            with st.expander(head, expanded=(iid in st.session_state.open_rec)):
+                rows = []
+                for _, x in g.iterrows():
+                    scheme = str(x["scheme_name"])
+                    su = str(x.get("scheme_url", "") or "")
+                    cell = ("", f'<a href="{su}" target="_blank">{scheme}</a>') \
+                        if su.startswith("http") else scheme
+                    link_cell = ("", f'<a href="{x["source_url"]}" target="_blank">open ↗</a>') \
+                        if str(x.get("source_url", "")).startswith("http") else ""
+                    rows.append([cell, x["scheme_jurisdiction"], x["recognition_status"],
+                                 x["notes"], link_cell])
+                html_table(["Scheme", "Scheme jurisdiction", "Status", "Notes", "Legal basis"],
+                           rows, max_height=520)
+        st.caption("Scheme names link to the scheme's own official page where one has been verified; "
+                   "the rest point to the World Bank Carbon Pricing Dashboard factsheets.")
 
 # ---- TAB 3: timeline ----
 with tab3:
