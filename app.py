@@ -64,6 +64,7 @@ st.markdown("""
   .dt tbody tr:nth-child(even) td.sec { background:var(--stripe); }
   .dt td.tick { text-align:center; font-size:21px; font-weight:700; color:#1B7A5A; line-height:1.1; }
   .dt td.pros { text-align:center; font-size:19px; color:#93A0B5; line-height:1.1; }
+  .dt td.undef { text-align:center; font-size:19px; color:#C3CAD6; line-height:1.1; }
   .cvlegend { display:flex; flex-wrap:wrap; gap:1.1rem; align-items:center;
               font-size:.9rem; color:#243049; margin:.1rem 0 .9rem; }
   .cvlegend b { font-size:1.25rem; }
@@ -765,7 +766,11 @@ with tab2:
     if msec.empty:
         st.info("No sector data for the current filter.")
     else:
-        lab = label_for(sorted(set(msec["instrument_id"])))
+        # Label every instrument on screen, not only those with sector rows. Omitting a
+        # measure whose covered goods are undefined would read as "no measure", which is
+        # a different claim from "scope not yet set".
+        lab = label_for(sorted(keep_ids))
+        undefined = {lab[i] for i in keep_ids if i not in set(msec["instrument_id"])}
         m = msec.copy()
         m["Jurisdiction"] = m["instrument_id"].map(lab)
         mat = pd.crosstab(m["Jurisdiction"], m["sector"])
@@ -773,16 +778,19 @@ with tab2:
         seen, order = set(), []
         for iid in sorted(lab, key=lambda i: ID_ORDER.get(i, 999)):
             c = lab[iid]
-            if c in mat.index and c not in seen:
+            if c not in seen:
                 seen.add(c); order.append(c)
         order += [c for c in mat.index if c not in seen]
-        mat = mat.loc[order]
+        mat = mat.reindex(index=order, fill_value=0)
         sectors = list(mat.columns)
         cover = {(lab[r["instrument_id"]], r["sector"]): r["coverage"]
                  for _, r in m.iterrows()}
         stage_of = {lab[i]: SMAP.get(i, "") for i in lab}
 
         def cell(jur, sector):
+            # a dash means "scope not yet defined"; an empty cell means "not covered"
+            if jur in undefined:
+                return ("undef", "–")
             cv = cover.get((jur, sector))
             if cv in COV:
                 sym, col = COV[cv]
@@ -791,6 +799,13 @@ with tab2:
 
         def row_label(jur):
             c = STAGE_COLOR.get(stage_of.get(jur, ""), "#5B6478")
+            if jur in undefined:
+                note = T("label.undefined", "scope not yet defined")
+                return ("sec", f'<span style="display:inline-block;width:14px;height:14px;'
+                               f'border-radius:50%;background:{c};margin-right:9px;'
+                               f'vertical-align:middle"></span>{jur}'
+                               f'<div style="font-weight:400;font-size:.78rem;color:var(--muted);'
+                               f'margin-left:23px">{note}</div>')
             return ("sec", f'<span style="display:inline-block;width:14px;height:14px;'
                            f'border-radius:50%;background:{c};margin-right:9px;'
                            f'vertical-align:middle"></span>{jur}')
@@ -802,6 +817,9 @@ with tab2:
             f'<span><b style="color:{c}">{sym}</b> '
             f'{T("legend.inscope", "in scope") if k == COV_CURRENT else T("legend.prospective", "prospective")}'
             '</span>' for k, (sym, c) in COV.items())
+        if undefined:
+            keys += ('<span><b style="color:#C3CAD6">–</b> '
+                     + T("legend.undefined", "covered goods not yet defined") + '</span>')
         dots = "".join(
             f'<span><b style="color:{STAGE_COLOR[k]}">●</b> {v.lower()}</span>'
             for k, v in STAGE_LABEL.items() if k in set(view["status_simple"]))
