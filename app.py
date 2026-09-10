@@ -67,6 +67,14 @@ st.markdown("""
   .cvlegend { display:flex; flex-wrap:wrap; gap:1.1rem; align-items:center;
               font-size:.9rem; color:#243049; margin:.1rem 0 .9rem; }
   .cvlegend b { font-size:1.05rem; }
+  .lead { color:var(--ink); font-size:1.03rem; line-height:1.62; font-weight:500;
+           border-left:3px solid var(--gold); padding:.15rem 0 .15rem .85rem; margin:.1rem 0 .4rem; }
+  .jchips { display:flex; flex-wrap:wrap; gap:.4rem; margin:.5rem 0 .2rem; }
+  .jchip { display:inline-flex; align-items:center; gap:.45rem; text-decoration:none;
+           border:1px solid var(--line); border-radius:999px; padding:.28rem .7rem;
+           font-size:.87rem; color:var(--ink); background:var(--card); }
+  .jchip:hover { border-color:var(--accent); color:var(--accent); }
+  .jchip span { width:9px; height:9px; border-radius:50%; display:inline-block; }
   .bigprice { font-family:Georgia,serif; font-size:1.75rem; color:var(--ink);
               font-weight:600; line-height:1.15; }
   /* instrument card headers rendered as buttons: make them look like titles */
@@ -363,6 +371,107 @@ if logo:
 st.title(T("app.title", "BCA Tracker"))
 st.caption(T("app.tagline", ""))
 
+def render_card_body(r, iid, OPEN):
+    """Render one instrument's collapsible sections. Shared by the Instruments tab
+    and the single-instrument deep-link page, so they can never drift apart."""
+    # ---- sections are defined by the Field_display tab, not by this file ----
+    for order, sec_label, items in card_sections():
+        special = [i for i in items if str(i["layout"]).lower() == "special"]
+        if special:
+            kind = str(special[0]["column_name"]).strip().lower()
+            if kind == "(prices)":
+                lp = latest_price(iid)
+                if lp is None:
+                    continue
+                hist = prices[prices["instrument_id"] == iid].sort_values("published_date")
+                with st.expander(f'{sec_label} — {fmt_price(lp)} ({lp["period"]})', expanded=OPEN):
+                    st.markdown(f'<div class="bigprice">{fmt_price(lp)}</div>'
+                                f'<div class="lab" style="margin-top:0">{lp["period"]} · '
+                                f'published {lp["published_date"]}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="val" style="margin-top:.6rem">{lp["basis"]}</div>',
+                                unsafe_allow_html=True)
+                    if lp.get("notes"):
+                        st.markdown(f'<div class="val" style="color:var(--muted)">{lp["notes"]}</div>',
+                                    unsafe_allow_html=True)
+                    if len(hist) > 1:
+                        st.markdown(f'<div class="lab">{T("label.pricehistory", "Published history")}</div>',
+                                    unsafe_allow_html=True)
+                        rows = [[h["period"], h["published_date"], fmt_price(h),
+                                 ("", f'<a href="{h["official_url"]}" target="_blank">open ↗</a>'
+                                  if str(h.get("official_url", "")).startswith("http") else "")]
+                                for _, h in hist[::-1].iterrows()]
+                        html_table(["Period", "Published", "Price", "Source"], rows)
+                    if len(hist) >= 4:
+                        st.line_chart(hist.set_index("period")["price"], height=200)
+
+            elif kind == "(sectors)":
+                msec = sec[sec["instrument_id"] == iid] if not sec.empty else pd.DataFrame()
+                if msec.empty:
+                    continue
+                with st.expander(sec_label, expanded=OPEN):
+                    cur = sorted(msec[msec["coverage"] == COV_CURRENT]["sector"].astype(str).unique())
+                    pro = sorted(msec[msec["coverage"] != COV_CURRENT]["sector"].astype(str).unique())
+                    st.markdown(f'<div class="lab">{T("label.inscope", "In scope")}</div>'
+                                f'<div class="val">{" · ".join(cur) if cur else "None defined yet"}</div>',
+                                unsafe_allow_html=True)
+                    if pro:
+                        st.markdown(f'<div class="lab">{T("label.prospective", "Prospective")}</div>'
+                                    f'<div class="val">{" · ".join(pro)}</div>', unsafe_allow_html=True)
+
+            elif kind == "(source)":
+                if not r.get("official_url"):
+                    continue
+                with st.expander(sec_label, expanded=OPEN):
+                    st.markdown(f'<div class="val">{r.get("primary_source", "")} — '
+                                f'<a href="{r["official_url"]}" target="_blank">official page ↗</a></div>',
+                                unsafe_allow_html=True)
+            continue
+
+        # ordinary text fields: 'full' spans the card, 'third' sits in a 3-up row
+        vals = [(i, str(r.get(COLMAP.get(i["column_name"], i["column_name"]), "") or ""))
+                for i in items]
+        if not any(v for _, v in vals):
+            continue
+        with st.expander(sec_label, expanded=OPEN):
+            thirds = [(i, v) for i, v in vals if str(i["layout"]).lower() == "third"]
+            if thirds:
+                cols = st.columns(max(len(thirds), 1))
+                for col, (i, v) in zip(cols, thirds):
+                    col.markdown(f'<div class="lab">{i["field_label"] or i["column_name"]}</div>'
+                                 f'<div class="val">{v}</div>', unsafe_allow_html=True)
+            for i, v in vals:
+                lay = str(i["layout"]).lower()
+                if lay == "third" or not v:
+                    continue
+                if i["field_label"]:
+                    st.markdown(f'<div class="lab">{i["field_label"]}</div>', unsafe_allow_html=True)
+                cls = "lead" if lay == "lead" else "val"
+                st.markdown(f'<div class="{cls}">{v}</div>', unsafe_allow_html=True)
+
+
+
+# ---------- deep link: ?instrument=EU-CBAM opens one instrument on its own page ----------
+def instrument_url(iid):
+    return f"?instrument={iid}"
+
+
+_focus = str(st.query_params.get("instrument", "") or "").strip()
+if _focus and _focus in set(inst["instrument_id"]):
+    fr = inst[inst["instrument_id"] == _focus].iloc[0]
+    st.markdown(f'<a href="./" style="font-size:.9rem">← back to the full tracker</a>',
+                unsafe_allow_html=True)
+    st.markdown(f'### {fr["jurisdiction"]} — {fr["instrument_name"]}')
+    st.markdown(cat_pill(fr["category"]) + "&nbsp;&nbsp;" +
+                stage_pill(fr["status"], fr.get("status_simple", "")), unsafe_allow_html=True)
+    if fr.get("notes"):
+        st.markdown('<div class="val" style="font-style:italic;color:#4a4030;'
+                    f'margin:.55rem 0 .95rem">{fr["notes"]}</div>', unsafe_allow_html=True)
+    OPEN = True
+    view = inst[inst["instrument_id"] == _focus]
+    render_card_body(fr, _focus, OPEN)
+    st.markdown(f'<div class="foot">{T("app.footer", "")}</div>', unsafe_allow_html=True)
+    st.stop()
+
 # ---------- sidebar filters ----------
 from datetime import datetime
 
@@ -544,6 +653,17 @@ with tab0:
         if unmapped:
             st.caption("Not shown on the map — add an ISO-3 code in the iso3_codes column of the "
                        "Instruments tab for: " + ", ".join(unmapped))
+
+        # jurisdiction chips: each opens that instrument on its own page in a new browser tab.
+        # Streamlit cannot switch the active tab programmatically, so a deep link is used instead.
+        chips = "".join(
+            f'<a class="jchip" href="{instrument_url(x["instrument_id"])}" target="_blank" '
+            f'rel="noopener" title="{x["instrument_name"]}">'
+            f'<span style="background:{STAGE_COLOR.get(x["status_simple"], "#5B6478")}"></span>'
+            f'{x["jurisdiction"]} ↗</a>'
+            for _, x in view.iterrows())
+        st.markdown(f'<div class="jchips">{chips}</div>', unsafe_allow_html=True)
+        st.caption("Open any measure on its own page in a new browser tab.")
         st.caption(f"{len(view)} measure(s) across {view['jurisdiction'].nunique()} jurisdiction(s), current filters.")
 
         # sectors per instrument, collapsed to one cell
@@ -637,78 +757,7 @@ with tab1:
                     st.markdown('<div class="val" style="font-style:italic;color:#4a4030;'
                                 f'margin:.55rem 0 .95rem">{r["notes"]}</div>', unsafe_allow_html=True)
 
-                # ---- sections are defined by the Field_display tab, not by this file ----
-                for order, sec_label, items in card_sections():
-                    special = [i for i in items if str(i["layout"]).lower() == "special"]
-                    if special:
-                        kind = str(special[0]["column_name"]).strip().lower()
-                        if kind == "(prices)":
-                            lp = latest_price(iid)
-                            if lp is None:
-                                continue
-                            hist = prices[prices["instrument_id"] == iid].sort_values("published_date")
-                            with st.expander(f'{sec_label} — {fmt_price(lp)} ({lp["period"]})', expanded=OPEN):
-                                st.markdown(f'<div class="bigprice">{fmt_price(lp)}</div>'
-                                            f'<div class="lab" style="margin-top:0">{lp["period"]} · '
-                                            f'published {lp["published_date"]}</div>', unsafe_allow_html=True)
-                                st.markdown(f'<div class="val" style="margin-top:.6rem">{lp["basis"]}</div>',
-                                            unsafe_allow_html=True)
-                                if lp.get("notes"):
-                                    st.markdown(f'<div class="val" style="color:var(--muted)">{lp["notes"]}</div>',
-                                                unsafe_allow_html=True)
-                                if len(hist) > 1:
-                                    st.markdown(f'<div class="lab">{T("label.pricehistory", "Published history")}</div>',
-                                                unsafe_allow_html=True)
-                                    rows = [[h["period"], h["published_date"], fmt_price(h),
-                                             ("", f'<a href="{h["official_url"]}" target="_blank">open ↗</a>'
-                                              if str(h.get("official_url", "")).startswith("http") else "")]
-                                            for _, h in hist[::-1].iterrows()]
-                                    html_table(["Period", "Published", "Price", "Source"], rows)
-                                if len(hist) >= 4:
-                                    st.line_chart(hist.set_index("period")["price"], height=200)
-
-                        elif kind == "(sectors)":
-                            msec = sec[sec["instrument_id"] == iid] if not sec.empty else pd.DataFrame()
-                            if msec.empty:
-                                continue
-                            with st.expander(sec_label, expanded=OPEN):
-                                cur = sorted(msec[msec["coverage"] == COV_CURRENT]["sector"].astype(str).unique())
-                                pro = sorted(msec[msec["coverage"] != COV_CURRENT]["sector"].astype(str).unique())
-                                st.markdown(f'<div class="lab">{T("label.inscope", "In scope")}</div>'
-                                            f'<div class="val">{" · ".join(cur) if cur else "None defined yet"}</div>',
-                                            unsafe_allow_html=True)
-                                if pro:
-                                    st.markdown(f'<div class="lab">{T("label.prospective", "Prospective")}</div>'
-                                                f'<div class="val">{" · ".join(pro)}</div>', unsafe_allow_html=True)
-
-                        elif kind == "(source)":
-                            if not r.get("official_url"):
-                                continue
-                            with st.expander(sec_label, expanded=OPEN):
-                                st.markdown(f'<div class="val">{r.get("primary_source", "")} — '
-                                            f'<a href="{r["official_url"]}" target="_blank">official page ↗</a></div>',
-                                            unsafe_allow_html=True)
-                        continue
-
-                    # ordinary text fields: 'full' spans the card, 'third' sits in a 3-up row
-                    vals = [(i, str(r.get(COLMAP.get(i["column_name"], i["column_name"]), "") or ""))
-                            for i in items]
-                    if not any(v for _, v in vals):
-                        continue
-                    with st.expander(sec_label, expanded=OPEN):
-                        thirds = [(i, v) for i, v in vals if str(i["layout"]).lower() == "third"]
-                        if thirds:
-                            cols = st.columns(max(len(thirds), 1))
-                            for col, (i, v) in zip(cols, thirds):
-                                col.markdown(f'<div class="lab">{i["field_label"] or i["column_name"]}</div>'
-                                             f'<div class="val">{v}</div>', unsafe_allow_html=True)
-                        for i, v in vals:
-                            if str(i["layout"]).lower() == "third" or not v:
-                                continue
-                            if i["field_label"]:
-                                st.markdown(f'<div class="lab">{i["field_label"]}</div>', unsafe_allow_html=True)
-                            st.markdown(f'<div class="val">{v}</div>', unsafe_allow_html=True)
-
+                render_card_body(r, iid, OPEN)
                 st.markdown('</div>', unsafe_allow_html=True)
 
 # ---- TAB 2: sector coverage matrix ----
