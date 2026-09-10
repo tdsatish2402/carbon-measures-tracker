@@ -1,0 +1,14 @@
+# Pins the theme. Without this, a phone or laptop set to dark mode makes Streamlit
+# render its dark palette (light text) while the app's CSS forces a white background,
+# so tab labels, headings and captions become near-invisible. Do not delete.
+[theme]
+base = "light"
+primaryColor = "#3F106E"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F8FA"
+textColor = "#243049"
+font = "sans serif"
+ 
+[client]
+showSidebarNavigation = false
+toolbarMode = "minimal"
