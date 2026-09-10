@@ -62,11 +62,11 @@ st.markdown("""
                position:sticky; left:0; background:var(--card); z-index:2;
                border-right:2px solid var(--line); min-width:190px; max-width:230px; }
   .dt tbody tr:nth-child(even) td.sec { background:var(--stripe); }
-  .dt td.tick { text-align:center; font-size:17px; font-weight:700; color:#1B7A5A; }
-  .dt td.pros { text-align:center; font-size:15px; color:#93A0B5; }
+  .dt td.tick { text-align:center; font-size:21px; font-weight:700; color:#1B7A5A; line-height:1.1; }
+  .dt td.pros { text-align:center; font-size:19px; color:#93A0B5; line-height:1.1; }
   .cvlegend { display:flex; flex-wrap:wrap; gap:1.1rem; align-items:center;
               font-size:.9rem; color:#243049; margin:.1rem 0 .9rem; }
-  .cvlegend b { font-size:1.05rem; }
+  .cvlegend b { font-size:1.25rem; }
   .lead { color:var(--ink); font-size:1.03rem; line-height:1.62; font-weight:500;
            border-left:3px solid var(--gold); padding:.15rem 0 .15rem .85rem; margin:.1rem 0 .4rem; }
   .jchips { display:flex; flex-wrap:wrap; gap:.4rem; margin:.5rem 0 .2rem; }
@@ -74,7 +74,7 @@ st.markdown("""
            border:1px solid var(--line); border-radius:999px; padding:.28rem .7rem;
            font-size:.87rem; color:var(--ink); background:var(--card); }
   .jchip:hover { border-color:var(--accent); color:var(--accent); }
-  .jchip span { width:9px; height:9px; border-radius:50%; display:inline-block; }
+  .jchip span { width:11px; height:11px; border-radius:50%; display:inline-block; }
   .bigprice { font-family:Georgia,serif; font-size:1.75rem; color:var(--ink);
               font-weight:600; line-height:1.15; }
   /* instrument card headers rendered as buttons: make them look like titles */
@@ -242,6 +242,14 @@ def _col(df, name):
 
 
 TEXT = dict(zip(_col(disp, "key").astype(str), _col(disp, "value").astype(str)))
+
+
+def cap(key):
+    """Render a caption only if Display_text still holds a value for it, so a
+    caption can be retired by clearing or deleting its row in the workbook."""
+    v = T(key, "")
+    if v:
+        st.caption(v)
 
 
 def T(key, default=""):
@@ -418,13 +426,18 @@ def render_card_body(r, iid, OPEN):
                         st.markdown(f'<div class="lab">{T("label.prospective", "Prospective")}</div>'
                                     f'<div class="val">{" · ".join(pro)}</div>', unsafe_allow_html=True)
 
-            elif kind == "(source)":
-                if not r.get("official_url"):
+            elif kind == "(legal)":
+                lb = str(r.get("legal_basis", "") or "")
+                url = str(r.get("official_url", "") or "")
+                if not lb and not url:
                     continue
                 with st.expander(sec_label, expanded=OPEN):
-                    st.markdown(f'<div class="val">{r.get("primary_source", "")} — '
-                                f'<a href="{r["official_url"]}" target="_blank">official page ↗</a></div>',
-                                unsafe_allow_html=True)
+                    if lb:
+                        st.markdown(f'<div class="val">{lb}</div>', unsafe_allow_html=True)
+                    if url:
+                        st.markdown('<div class="val" style="margin-top:.5rem">'
+                                    f'<a href="{url}" target="_blank">official page ↗</a></div>',
+                                    unsafe_allow_html=True)
             continue
 
         # ordinary text fields: 'full' spans the card, 'third' sits in a 3-up row
@@ -486,16 +499,22 @@ if st.sidebar.button(T("sidebar.reload", "Reload data"), use_container_width=Tru
     st.cache_data.clear()
     st.rerun()
 st.sidebar.markdown("---")
-st.sidebar.header(T("sidebar.filter", "Filter"))
-cats = sorted([c for c in inst["category"].unique() if c])
-stages = [s for s in STAGE_ORDER if s in set(inst["status_simple"])]
-juris = sorted([j for j in inst["jurisdiction"].unique() if j])
-f_cat = st.sidebar.multiselect(T("sidebar.category", "Category"), cats, default=cats)
-f_stage = st.sidebar.multiselect(T("sidebar.stage", "Stage"), stages, default=stages)
-f_jur = st.sidebar.multiselect(T("sidebar.jurisdiction", "Jurisdiction"), juris, default=juris)
-
-view = inst[inst["category"].isin(f_cat) & inst["status_simple"].isin(f_stage)
-            & inst["jurisdiction"].isin(f_jur)]
+# Sidebar filters are hidden while the dataset is small - with 8 of 11 rows in one
+# category they discriminated almost nothing. The Display_text keys and this block
+# are kept so they can be switched back on once there is more to analyse.
+SHOW_FILTERS = False
+if SHOW_FILTERS:
+    st.sidebar.header(T("sidebar.filter", "Filter"))
+    cats = sorted([c for c in inst["category"].unique() if c])
+    stages = [x for x in STAGE_ORDER if x in set(inst["status_simple"])]
+    juris = sorted([j for j in inst["jurisdiction"].unique() if j])
+    f_cat = st.sidebar.multiselect(T("sidebar.category", "Category"), cats, default=cats)
+    f_stage = st.sidebar.multiselect(T("sidebar.stage", "Stage"), stages, default=stages)
+    f_jur = st.sidebar.multiselect(T("sidebar.jurisdiction", "Jurisdiction"), juris, default=juris)
+    view = inst[inst["category"].isin(f_cat) & inst["status_simple"].isin(f_stage)
+                & inst["jurisdiction"].isin(f_jur)]
+else:
+    view = inst.copy()
 
 @st.cache_data
 def health(stamp):
@@ -602,7 +621,7 @@ tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs(
 # ---- TAB 0: overview map ----
 with tab0:
     st.subheader(T("tab.overview", "Overview"))
-    st.caption(T("caption.overview", ""))
+    cap("caption.overview")
 
     if view.empty:
         st.info(T("empty.filters", "No instruments match the current filters."))
@@ -634,18 +653,23 @@ with tab0:
                 hover_name="Jurisdiction",
                 hover_data={"iso": False, "Stage": True, "Measures": True},
             )
+            # crop Antarctica and the empty high Arctic: on a laptop this removes a
+            # third of the dead space, and on a phone it makes the map legible at all
             fig.update_geos(showframe=False, showcoastlines=False, showcountries=True,
                             countrycolor="#D9DEE8", landcolor="#EDF0F5", lakecolor="#FFFFFF",
-                            bgcolor="rgba(0,0,0,0)", projection_type="natural earth")
+                            bgcolor="rgba(0,0,0,0)", projection_type="natural earth",
+                            lataxis_range=[-56, 84], lonaxis_range=[-168, 190])
             fig.update_layout(
-                margin=dict(l=0, r=0, t=0, b=0), height=520,
+                margin=dict(l=0, r=0, t=0, b=0), height=430, dragmode=False,
                 paper_bgcolor="rgba(0,0,0,0)", geo_bgcolor="rgba(0,0,0,0)",
                 legend=dict(orientation="h", yanchor="bottom", y=-0.06,
                             xanchor="left", x=0, title_text="",
                             font=dict(size=14)),
                 font=dict(family="Arial", size=14, color="#243049"),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True,
+                            config={"displayModeBar": False, "scrollZoom": False,
+                                    "staticPlot": False, "responsive": True})
         except ModuleNotFoundError:
             st.warning("The map needs plotly. Install it with:  pip install plotly  "
                        "— open the table below in the meantime.")
@@ -656,43 +680,19 @@ with tab0:
 
         # jurisdiction chips: each opens that instrument on its own page in a new browser tab.
         # Streamlit cannot switch the active tab programmatically, so a deep link is used instead.
+        # grouped by stage, alphabetical within each group, so the dots read as runs
+        chip_rank = {k: i for i, k in enumerate(STAGE_ORDER)}
+        ordered = sorted(
+            view.to_dict("records"),
+            key=lambda x: (chip_rank.get(x.get("status_simple"), 99), str(x.get("jurisdiction", ""))))
         chips = "".join(
             f'<a class="jchip" href="{instrument_url(x["instrument_id"])}" target="_blank" '
             f'rel="noopener" title="{x["instrument_name"]}">'
             f'<span style="background:{STAGE_COLOR.get(x["status_simple"], "#5B6478")}"></span>'
             f'{x["jurisdiction"]} ↗</a>'
-            for _, x in view.iterrows())
+            for x in ordered)
         st.markdown(f'<div class="jchips">{chips}</div>', unsafe_allow_html=True)
         st.caption("Open any measure on its own page in a new browser tab.")
-        st.caption(f"{len(view)} measure(s) across {view['jurisdiction'].nunique()} jurisdiction(s), current filters.")
-
-        # sectors per instrument, collapsed to one cell
-        def sectors_for(iid):
-            """In-scope sectors only — prospective ones are not coverage."""
-            if sec.empty: return ""
-            d = sec[(sec["instrument_id"] == iid) & (sec["coverage"] == "Current scope")]
-            return ", ".join(sorted(d["sector"].dropna().astype(str).unique()))
-
-        with st.expander("Show as table"):
-            ov = view.copy()
-            ov["Sectors covered"] = ov["instrument_id"].map(sectors_for)
-            ov = ov.rename(columns={
-                "jurisdiction": "Jurisdiction",
-                "instrument_name": "Measure",
-                "category": "Nature of measure",
-                "status": "Status",
-                "status_simple": "Stage",
-                "Implementation/Coming into Force Date": "In force / from",
-                "official_url": "Official link",
-            })
-            cols = [c for c in ["Jurisdiction", "Measure", "Status",
-                                "In force / from", "Sectors covered"] if c in ov.columns]
-            rows = []
-            for _, x in ov.iterrows():
-                rows.append([x.get(c, "") for c in cols] +
-                            [("", f'<a href="{x["Official link"]}" target="_blank">open ↗</a>'
-                                  if x.get("Official link") else "")])
-            html_table(cols + ["Official link"], rows, max_height=520)
 
 # ---- TAB 1: instrument cards ----
 with tab1:
@@ -704,8 +704,13 @@ with tab1:
         st.session_state.setdefault("open_cards", set())
         st.session_state.setdefault("expand_all", False)
 
-        b1, b2, _sp = st.columns([1, 1, 3])
+        pick_col, b1, b2 = st.columns([2, 1, 1])
         all_ids = list(view["instrument_id"])
+        # type-to-search picker: the list itself tells the reader what is covered
+        opts = [T("picker.all", "All instruments")] + [
+            f'{x["jurisdiction"]} — {x["instrument_name"]}' for _, x in view.iterrows()]
+        picked = pick_col.selectbox(T("picker.label", "Go to instrument"), opts,
+                                    label_visibility="collapsed")
         cards_all_open = st.session_state.open_cards.issuperset(all_ids)
         if b1.button(T("button.collapse.instruments", "Collapse all instruments") if cards_all_open
                      else T("button.expand.instruments", "Expand all instruments"),
@@ -719,24 +724,16 @@ with tab1:
             st.rerun()
         OPEN = st.session_state.expand_all
 
-        main, side = st.columns([3, 1], gap="large")
-
-        # right-side index: click a name to isolate that instrument
-        with side:
-            st.markdown('<div class="lab">Jump to instrument</div>', unsafe_allow_html=True)
-            names = ["(show all)"] + [f'{r["jurisdiction"]} — {r["instrument_name"]}'
-                                      for _, r in view.iterrows()]
-            picked = st.radio("index", names, label_visibility="collapsed", key="idx")
-
         show = view
-        if picked != "(show all)":
-            show = view[view.apply(lambda r: f'{r["jurisdiction"]} — {r["instrument_name"]}' == picked, axis=1)]
+        if picked != T("picker.all", "All instruments"):
+            show = view[view.apply(
+                lambda r: f'{r["jurisdiction"]} — {r["instrument_name"]}' == picked, axis=1)]
 
         def val_block(v):
             st.markdown(f'<div class="val">{v}</div>', unsafe_allow_html=True)
 
-        with main:
-            for _, r in show.iterrows():
+        for _, r in show.iterrows():
+            if True:
                 iid = r["instrument_id"]
                 is_open = iid in st.session_state.open_cards
                 st.markdown('<div class="cardwrap">', unsafe_allow_html=True)
@@ -794,8 +791,9 @@ with tab2:
 
         def row_label(jur):
             c = STAGE_COLOR.get(stage_of.get(jur, ""), "#5B6478")
-            return ("sec", f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;'
-                           f'background:{c};margin-right:8px;vertical-align:middle"></span>{jur}')
+            return ("sec", f'<span style="display:inline-block;width:14px;height:14px;'
+                           f'border-radius:50%;background:{c};margin-right:9px;'
+                           f'vertical-align:middle"></span>{jur}')
 
         rows = [[row_label(j)] + [cell(j, sc) for sc in sectors] for j in order]
         html_table(["Jurisdiction"] + sectors, rows, max_height=560, first_col_sticky=True)
@@ -808,18 +806,10 @@ with tab2:
             f'<span><b style="color:{STAGE_COLOR[k]}">●</b> {v.lower()}</span>'
             for k, v in STAGE_LABEL.items() if k in set(view["status_simple"]))
         st.markdown(f'<div class="cvlegend">{keys}{dots}</div>', unsafe_allow_html=True)
-        st.caption(T("caption.sectors", ""))
+        cap("caption.sectors")
 
-        with st.expander("Show HS codes behind each sector"):
-            rank = {j: i for i, j in enumerate(order)}
-            hs = m[["Jurisdiction", "sector", "coverage", "hs_code", "scope_note"]].copy()
-            hs["_o"] = hs["Jurisdiction"].map(rank).fillna(999)
-            hs["_c"] = (hs["coverage"] != "Current scope").astype(int)  # current first
-            hs = (hs.sort_values(["_o", "_c", "sector"])
-                    .drop(columns=["_o", "_c"])
-                    .rename(columns={"sector": "Sector", "coverage": "Coverage",
-                                     "hs_code": "HS code", "scope_note": "Scope note"}))
-            html_table(list(hs.columns), hs.values.tolist(), max_height=600)
+        # HS codes here are chapter-level orientation, not the instruments' actual
+        # commodity-code lists. Hidden until the dataset carries verified codes.
 
 # ---- TAB 5: recognition of third-country carbon prices ----
 # "recognition", not "linkage": linkage is a distinct legal concept (mutual recognition
@@ -869,8 +859,7 @@ with tab5:
                                  x["notes"], link_cell])
                 html_table(["Scheme", "Scheme jurisdiction", "Status", "Notes", "Legal basis"],
                            rows, max_height=520)
-        st.caption("Scheme names link to the scheme's own official page where one has been verified; "
-                   "the rest point to the World Bank Carbon Pricing Dashboard factsheets.")
+
 
 # ---- TAB 3: timeline ----
 with tab3:
@@ -900,7 +889,7 @@ with tab3:
         if tev.empty:
             st.info("No events in the selected year range.")
         elif layout == "Swimlane grid":
-            st.caption(T("caption.timeline.swimlane", ""))
+            cap("caption.timeline.swimlane")
             # jurisdictions ordered by earliest event
             order_j = tev.groupby("jurisdiction")["date"].min().sort_values().index.tolist()
 
@@ -924,7 +913,7 @@ with tab3:
             st.markdown(f'<div class="tl-scroll"><table class="tl-table"><tr>{head}</tr>{rows_html}</table></div>',
                         unsafe_allow_html=True)
         else:
-            st.caption(T("caption.timeline.list", ""))
+            cap("caption.timeline.list")
             for _, r in tev.sort_values("date").iterrows():
                 col = CAT_COLOR.get(r["category"], "#1D2657")
                 when = f'{r["mon"]} {r["year"]}'.strip()
@@ -936,8 +925,7 @@ with tab3:
 
 # ---- TAB 4: sources ----
 with tab4:
-    st.subheader(T("tab.sources", "Official sources"))
-    st.caption(T("caption.sources", ""))
+    st.subheader(T("tab.sources", "Sources"))
     keep_ids = set(view["instrument_id"])
     msrc = src[src["instrument_id"].isin(keep_ids)].copy() if not src.empty else pd.DataFrame()
     if msrc.empty:
