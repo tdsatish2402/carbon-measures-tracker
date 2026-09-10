@@ -88,7 +88,19 @@ st.markdown("""
   .dt th.jur { min-width:104px; white-space:normal; }
   [data-testid="stMetricValue"] { color:var(--ink); font-family:Georgia,serif; }
   [data-testid="stMetricLabel"] { color:var(--muted); }
-  .stTabs [aria-selected="true"] { color:var(--accent) !important; }
+  /* Tabs, headings and captions get explicit colours. If the browser or device is in
+     dark mode, Streamlit's inherited text colour goes light and would vanish against
+     the white background this app forces. */
+  .stTabs [data-baseweb="tab"] { color:#4A5468 !important; }
+  .stTabs [data-baseweb="tab"] p { color:inherit !important; font-size:1rem !important; }
+  .stTabs [aria-selected="true"], .stTabs [aria-selected="true"] p { color:var(--accent) !important; }
+  .stTabs [data-baseweb="tab-highlight"] { background-color:var(--accent) !important; }
+  h1, h2, h3, h4, h5, h6, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { color:var(--ink) !important; }
+  .stApp, .stApp p, .stApp li, .stApp label, .stApp span, .stMarkdown { color:#243049; }
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color:var(--muted) !important; }
+  [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] p { color:var(--muted) !important; }
+  [data-testid="stExpander"] summary, [data-testid="stExpander"] summary p { color:var(--ink) !important; }
+  .cvlegend, .cvlegend span { color:#243049 !important; }
   .logo-rule { border:0; border-top:2px solid var(--gold); width:230px;
                margin:.55rem 0 1.1rem; opacity:.85; }
   /* breathing room between the collapsible sections on instrument cards */
@@ -105,6 +117,32 @@ st.markdown("""
   .tl-empty { background:var(--paper) !important; }
   .tl-ev { font-size:13.5px; line-height:1.45; padding:6px 8px; margin:4px 0; background:var(--stripe); border-radius:3px; color:#243049; }
   .tl-mo { display:inline-block; background:#E3E6EC; border-radius:3px; padding:1px 6px; margin-right:5px; font-weight:700; color:var(--ink); font-size:12px; }
+  /* Phone layout. The sticky jurisdiction column was 190-230px of a ~380px screen,
+     which left room for a single sector. Narrowing it and the sector columns gets
+     four or five into view, which is the difference between usable and not. */
+  @media (max-width: 700px) {
+    html, body, [class*="css"] { font-size:16px; }
+    .dt { font-size:13px; }
+    .dt th { padding:7px 6px; font-size:11.5px; }
+    .dt td { padding:7px 6px; }
+    .dt td.sec { min-width:104px; max-width:120px; font-size:12px; padding:7px 6px; }
+    .dt th.jur { min-width:58px; }
+    .dt td.tick { font-size:18px; }
+    .dt td.pros, .dt td.undef { font-size:16px; }
+    .jchip { font-size:.82rem; padding:.24rem .6rem; }
+    .lead { font-size:.98rem; }
+    .bigprice { font-size:1.45rem; }
+    .cvlegend { gap:.7rem; font-size:.85rem; }
+  }
+  /* The swimlane grid cannot work at phone width - each year column needs ~190px.
+     Below 700px the chronological list is shown instead, and above it the grid. */
+  .tl-narrow { display:none; }
+  @media (max-width: 700px) {
+    .tl-wide { display:none !important; }
+    .tl-narrow { display:block !important; }
+  }
+  .tl-item { border-left:3px solid var(--ink); padding:.3rem 0 .75rem .9rem;
+             margin-left:.2rem; font-size:1rem; line-height:1.55; color:#243049; }
   .foot { color:var(--muted); font-size:.85rem; line-height:1.5; border-top:1px solid var(--line);
           padding-top:.9rem; margin-top:1.6rem; }
 </style>
@@ -380,6 +418,21 @@ if logo:
 st.title(T("app.title", "BCA Tracker"))
 st.caption(T("app.tagline", ""))
 
+def list_html(tev):
+    """Chronological event list as one HTML block, so it can be shown or hidden by a
+    media query alongside the swimlane grid."""
+    out = []
+    for _, r in tev.sort_values("date").iterrows():
+        col = CAT_COLOR.get(r["category"], "#1D2657")
+        when = f'{r["mon"]} {r["year"]}'.strip()
+        link = (f' — <a href="{r["official_url"]}" target="_blank">source ↗</a>'
+                if str(r.get("official_url", "")).startswith("http") else "")
+        out.append(f'<div class="tl-item" style="border-left-color:{col}">'
+                   f'<b>{when}</b> &nbsp;·&nbsp; <span style="color:#5B6478">{r["jurisdiction"]}</span><br>'
+                   f'{r["event"]}{link}</div>')
+    return "".join(out)
+
+
 def render_card_body(r, iid, OPEN):
     """Render one instrument's collapsible sections. Shared by the Instruments tab
     and the single-instrument deep-link page, so they can never drift apart."""
@@ -494,12 +547,25 @@ if not os.path.exists(DATA_FILE):
              f"Currently looking in: `{os.getcwd()}`")
     st.stop()
 
+# The sidebar holds maintenance tools only - a timestamp, a cache reset and data
+# warnings. Readers get nothing from it, and on a phone it costs a tap to dismiss.
+# It is therefore hidden entirely unless the URL carries ?admin=1.
+ADMIN = str(st.query_params.get("admin", "")).strip().lower() in ("1", "true", "yes")
+if not ADMIN:
+    st.markdown("""
+    <style>
+      [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
+      [data-testid="collapsedControl"], [data-testid="stSidebarCollapseButton"] { display:none !important; }
+      section.main > div, [data-testid="stAppViewContainer"] > .main { padding-left:0 !important; }
+    </style>""", unsafe_allow_html=True)
+
 _mt = datetime.fromtimestamp(os.path.getmtime(DATA_FILE))
-st.sidebar.caption(f"Data file last saved  \n**{_mt:%d %b %Y, %H:%M:%S}**")
-if st.sidebar.button(T("sidebar.reload", "Reload data"), use_container_width=True):
-    st.cache_data.clear()
-    st.rerun()
-st.sidebar.markdown("---")
+if ADMIN:
+    st.sidebar.caption(f"Data file last saved  \n**{_mt:%d %b %Y, %H:%M:%S}**")
+    if st.sidebar.button(T("sidebar.reload", "Reload data"), use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+    st.sidebar.markdown("---")
 # Sidebar filters are hidden while the dataset is small - with 8 of 11 rows in one
 # category they discriminated almost nothing. The Display_text keys and this block
 # are kept so they can be switched back on once there is more to analyse.
@@ -597,7 +663,7 @@ def health(stamp):
 
 
 _issues = health(file_stamp(DATA_FILE))
-if dropped or _issues:
+if (dropped or _issues) and ADMIN:
     st.sidebar.markdown("---")
     st.sidebar.markdown(f'**{T("sidebar.datacheck", "Data check")}**')
     if dropped:
@@ -928,18 +994,16 @@ with tab3:
             rows_html = ""
             for j in order_j:
                 rows_html += "<tr>" + f'<th class="tl-lane">{j}</th>' + "".join(cellhtml(j, y) for y in years) + "</tr>"
-            st.markdown(f'<div class="tl-scroll"><table class="tl-table"><tr>{head}</tr>{rows_html}</table></div>',
-                        unsafe_allow_html=True)
+            # Both renderings are emitted; CSS shows the grid on wide screens and the
+            # list on phones, so a phone user is never handed an unreadable grid.
+            st.markdown(
+                f'<div class="tl-wide"><div class="tl-scroll"><table class="tl-table">'
+                f'<tr>{head}</tr>{rows_html}</table></div></div>'
+                f'<div class="tl-narrow">{list_html(tev)}</div>',
+                unsafe_allow_html=True)
         else:
             cap("caption.timeline.list")
-            for _, r in tev.sort_values("date").iterrows():
-                col = CAT_COLOR.get(r["category"], "#1D2657")
-                when = f'{r["mon"]} {r["year"]}'.strip()
-                link = f' — <a href="{r["official_url"]}" target="_blank">source ↗</a>' if r.get("official_url") else ""
-                st.markdown(f'<div style="border-left:3px solid {col};padding:.25rem 0 .7rem .9rem;'
-                            f'margin-left:.3rem;font-size:1rem;line-height:1.55">'
-                            f'<b>{when}</b> &nbsp;·&nbsp; <span style="color:var(--muted)">{r["jurisdiction"]}</span><br>'
-                            f'{r["event"]}{link}</div>', unsafe_allow_html=True)
+            st.markdown(list_html(tev), unsafe_allow_html=True)
 
 # ---- TAB 4: sources ----
 with tab4:
