@@ -67,6 +67,8 @@ st.markdown("""
   .cvlegend { display:flex; flex-wrap:wrap; gap:1.1rem; align-items:center;
               font-size:.9rem; color:#243049; margin:.1rem 0 .9rem; }
   .cvlegend b { font-size:1.05rem; }
+  .bigprice { font-family:Georgia,serif; font-size:1.75rem; color:var(--ink);
+              font-weight:600; line-height:1.15; }
   /* instrument card headers rendered as buttons: make them look like titles */
   .cardwrap div[data-testid="stButton"] button {
       background:transparent; border:none; padding:.1rem 0; box-shadow:none;
@@ -99,44 +101,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# category colours, drawn from the wordmark's navy/purple/gold
-CAT_COLOR = {
-    "BCA": "#1D2657",
-    "Domestic carbon pricing": "#8A6D1F",
-    "Enabling law": "#3F106E",
-    "Proposal": "#6B7280",
-}
-
-# stage palette, shared by the map and the status pills
-STAGE_COLOR = {"In Force": "#1B7A5A", "Draft": "#C77A16", "Conceptual": "#3B5FA8"}
-# self-explaining legend labels, so the map needs no separate colour key
-STAGE_LABEL = {"In Force": "In force",
-               "Draft": "Draft / legislated, not yet in force",
-               "Conceptual": "Conceptual"}
-LEGEND_COLOR = {STAGE_LABEL[k]: v for k, v in STAGE_COLOR.items()}
-STAGE_RANK = {"In Force": 3, "Draft": 2, "Conceptual": 1}
+# Colours, labels and country codes all come from the workbook. The dicts below are
+# only fallbacks for an older file that predates the control tabs.
+FALLBACK_CAT = {"BCA": "#1D2657", "Domestic carbon pricing": "#8A6D1F",
+                "Enabling law": "#3F106E", "Proposal": "#6B7280"}
+FALLBACK_STAGE = {"In Force": ("In force", "#1B7A5A"),
+                  "Draft": ("Draft / legislated, not yet in force", "#C77A16"),
+                  "Conceptual": ("Conceptual", "#3B5FA8")}
 MONTHS = {"01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr", "05": "May", "06": "Jun",
           "07": "Jul", "08": "Aug", "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"}
-
-# jurisdiction -> ISO-3 codes for the choropleth. The EU expands to its 27 member states
-# so the bloc colours in properly rather than vanishing from the map.
-EU27 = ["AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU",
-        "GRC", "HUN", "IRL", "ITA", "LVA", "LTU", "LUX", "MLT", "NLD", "POL", "PRT",
-        "ROU", "SVK", "SVN", "ESP", "SWE"]
-ISO3 = {
-    "European Union": EU27,
-    "United Kingdom": ["GBR"],
-    "Australia": ["AUS"],
-    "Serbia": ["SRB"],
-    "Norway": ["NOR"],
-    "United States": ["USA"],
-    "Thailand": ["THA"],
-    "Turkiye": ["TUR"],
-    "Türkiye": ["TUR"],
-    "Chinese Taipei": ["TWN"],
-    "Canada": ["CAN"],
-}
-
 
 def html_table(headers, rows, max_height=None, first_col_sticky=False):
     """Render a real DOM table. st.dataframe paints to canvas, so its text can't
@@ -196,15 +169,29 @@ COLMAP = {
 
 
 # ---------- load + clean ----------
-@st.cache_data
-def load():
+def file_stamp(path):
+    """Fingerprint of the workbook. Passed into load() so that saving the Excel
+    file changes the cache key and Streamlit re-reads it. Without this the
+    @st.cache_data result is memoised forever and edits never appear."""
+    try:
+        st_ = os.stat(path)
+        return (round(st_.st_mtime, 3), st_.st_size)
+    except OSError:
+        return (0, 0)
+
+
+@st.cache_data(show_spinner="Reading workbook…")
+def load(stamp):
+    _ = stamp  # part of the cache key only
     xl = pd.ExcelFile(DATA_FILE)
     def rd(tab): return pd.read_excel(DATA_FILE, tab, header=1) if tab in xl.sheet_names else pd.DataFrame()
     inst = rd("Instruments"); sec = rd("Sectors"); ev = rd("Events")
     if not inst.empty:
         inst.columns = [str(c).strip() for c in inst.columns]
         inst = inst.rename(columns=COLMAP)
-    src = rd("Sources"); catleg = rd("Category_legend"); link = rd("Carbon_price_recognition")
+    src = rd("Sources"); catleg = rd("Category_legend"); link = rd("Carbon_price_recognition"); prices = rd("Prices")
+    disp = rd("Display_text"); fields = rd("Field_display")
+    stageleg = rd("Stage_legend"); covleg = rd("Coverage_legend"); catleg2 = rd("Category_legend")
 
     valid_cats = set(catleg["category_value"].dropna()) if not catleg.empty else set()
 
@@ -231,10 +218,57 @@ def load():
             d.dropna(how="all", inplace=True)
             if "instrument_id" in d:
                 d.drop(d[d["instrument_id"] == EXAMPLE_ID].index, inplace=True)
-    return inst, sec, ev, src, link, dropped
+    if not prices.empty and "price" in prices:
+        prices["price"] = pd.to_numeric(prices["price"], errors="coerce")
+        prices = prices[prices["price"].notna()]
+    return (inst, sec, ev, src, link, prices, dropped,
+            disp, fields, stageleg, covleg, catleg2)
 
 
-inst, sec, ev, src, link, dropped = load()
+(inst, sec, ev, src, link, prices, dropped,
+ disp, fields, stageleg, covleg, catleg2) = load(file_stamp(DATA_FILE))
+
+# ---------- everything below is driven by the workbook's control tabs ----------
+def _col(df, name):
+    return df[name] if (not df.empty and name in df.columns) else pd.Series(dtype=object)
+
+
+TEXT = dict(zip(_col(disp, "key").astype(str), _col(disp, "value").astype(str)))
+
+
+def T(key, default=""):
+    """UI string from the Display_text tab, falling back to a built-in default."""
+    v = TEXT.get(key, "")
+    return v if v and v != "nan" else default
+
+
+# stage: label + colour from Stage_legend
+if not stageleg.empty and {"stage_value", "colour"} <= set(stageleg.columns):
+    STAGE_LABEL = dict(zip(stageleg["stage_value"].astype(str),
+                           stageleg["display_label"].astype(str)))
+    STAGE_COLOR = dict(zip(stageleg["stage_value"].astype(str),
+                           stageleg["colour"].astype(str)))
+    STAGE_ORDER = list(stageleg["stage_value"].astype(str))
+else:
+    STAGE_LABEL = {k: v[0] for k, v in FALLBACK_STAGE.items()}
+    STAGE_COLOR = {k: v[1] for k, v in FALLBACK_STAGE.items()}
+    STAGE_ORDER = list(FALLBACK_STAGE)
+LEGEND_COLOR = {STAGE_LABEL[k]: v for k, v in STAGE_COLOR.items() if k in STAGE_LABEL}
+STAGE_RANK = {k: len(STAGE_ORDER) - i for i, k in enumerate(STAGE_ORDER)}
+
+# category colours from Category_legend
+if not catleg2.empty and {"category_value", "colour"} <= set(catleg2.columns):
+    CAT_COLOR = dict(zip(catleg2["category_value"].astype(str), catleg2["colour"].astype(str)))
+else:
+    CAT_COLOR = dict(FALLBACK_CAT)
+
+# coverage symbols + colours from Coverage_legend
+if not covleg.empty and {"coverage_value", "symbol", "colour"} <= set(covleg.columns):
+    COV = {r["coverage_value"]: (str(r["symbol"]), str(r["colour"]))
+           for _, r in covleg.iterrows()}
+else:
+    COV = {"Current scope": ("\u2713", "#1B7A5A"), "Prospective": ("\u25cb", "#93A0B5")}
+COV_CURRENT = next(iter(COV), "Current scope")
 
 # instrument_id -> jurisdiction, used wherever a raw code would otherwise be shown
 JMAP = dict(zip(inst["instrument_id"], inst["jurisdiction"]))
@@ -253,6 +287,45 @@ def short_name(iid):
     """'Foreign Pollution Fee Act of 2025 (S. 1325, ...)' -> 'Foreign Pollution Fee Act'"""
     n = str(NMAP.get(iid, iid)).split(" of 20")[0].split(" (")[0].strip()
     return n if len(n) <= 34 else n[:31].rstrip() + "..."
+
+
+def card_sections():
+    """Ordered [(order, section_label, [field rows])] from the Field_display tab.
+    Rows sharing an 'order' become one collapsible section."""
+    if fields.empty or "column_name" not in fields.columns:
+        return []
+    f = fields.copy()
+    f["show"] = f.get("show", "yes").astype(str).str.strip().str.lower()
+    f = f[~f["show"].isin(["no", "false", "0", "n"])]
+    f["order"] = pd.to_numeric(f["order"], errors="coerce").fillna(999)
+    f["field_label"] = f.get("field_label", "").fillna("").astype(str).replace("nan", "")
+    out = []
+    for o in sorted(f["order"].unique()):
+        g = f[f["order"] == o]
+        out.append((o, str(g["section_label"].iloc[0]), g.to_dict("records")))
+    return out
+
+
+def iso3_for(row):
+    """ISO-3 codes for the choropleth, read from the instrument's own iso3_codes cell.
+    Semicolon-separated so a bloc (the EU) can list all its member states."""
+    raw = str(row.get("iso3_codes", "") or "")
+    return [c.strip().upper() for c in raw.replace(",", ";").split(";")
+            if len(c.strip()) == 3]
+
+
+def latest_price(iid):
+    """Most recent published price row for an instrument, or None."""
+    if prices.empty or "instrument_id" not in prices:
+        return None
+    d = prices[prices["instrument_id"] == iid]
+    if d.empty:
+        return None
+    return d.sort_values("published_date").iloc[-1]
+
+
+def fmt_price(r):
+    return f'{r["currency"]} {r["price"]:,.2f} / {r["unit"]}'
 
 
 def label_for(ids):
@@ -287,49 +360,149 @@ logo = next((f for f in LOGO_CANDIDATES if os.path.exists(f)), None)
 if logo:
     st.image(prep_logo(logo), width=LOGO_WIDTH)
     st.markdown('<hr class="logo-rule">', unsafe_allow_html=True)
-st.title("BCA Tracker")
-st.caption("Tracking border carbon measures worldwide.")
+st.title(T("app.title", "BCA Tracker"))
+st.caption(T("app.tagline", ""))
 
 # ---------- sidebar filters ----------
-st.sidebar.header("Filter")
+from datetime import datetime
+
+if not os.path.exists(DATA_FILE):
+    st.error(f"Cannot find **{DATA_FILE}**. It must sit in the same folder as app.py. "
+             f"Currently looking in: `{os.getcwd()}`")
+    st.stop()
+
+_mt = datetime.fromtimestamp(os.path.getmtime(DATA_FILE))
+st.sidebar.caption(f"Data file last saved  \n**{_mt:%d %b %Y, %H:%M:%S}**")
+if st.sidebar.button(T("sidebar.reload", "Reload data"), use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
+st.sidebar.markdown("---")
+st.sidebar.header(T("sidebar.filter", "Filter"))
 cats = sorted([c for c in inst["category"].unique() if c])
-stages = [s for s in ["In Force", "Draft", "Conceptual"] if s in set(inst["status_simple"])]
+stages = [s for s in STAGE_ORDER if s in set(inst["status_simple"])]
 juris = sorted([j for j in inst["jurisdiction"].unique() if j])
-f_cat = st.sidebar.multiselect("Category", cats, default=cats)
-f_stage = st.sidebar.multiselect("Stage", stages, default=stages)
-f_jur = st.sidebar.multiselect("Jurisdiction", juris, default=juris)
+f_cat = st.sidebar.multiselect(T("sidebar.category", "Category"), cats, default=cats)
+f_stage = st.sidebar.multiselect(T("sidebar.stage", "Stage"), stages, default=stages)
+f_jur = st.sidebar.multiselect(T("sidebar.jurisdiction", "Jurisdiction"), juris, default=juris)
 
 view = inst[inst["category"].isin(f_cat) & inst["status_simple"].isin(f_stage)
             & inst["jurisdiction"].isin(f_jur)]
 
-if dropped:
+@st.cache_data
+def health(stamp):
+    """Catch edits that would otherwise fail silently: a mistyped category drops the
+    whole row, an unrecognised coverage value renders as an empty matrix cell, and an
+    instrument_id typo orphans every child row."""
+    _ = stamp
+    xl = pd.ExcelFile(DATA_FILE)
+    g = lambda t: pd.read_excel(DATA_FILE, t, header=1) if t in xl.sheet_names else pd.DataFrame()
+    issues = []
+    I, S = g("Instruments"), g("Sectors")
+    legends = {"category": ("Category_legend", "category_value", I),
+               "status": ("Status_legend", "status_value", I),
+               "sector": ("Sector_legend", "sector_value", S),
+               "coverage": ("Coverage_legend", "coverage_value", S)}
+    for col, (sheet, key, df) in legends.items():
+        L = g(sheet)
+        if df.empty or L.empty or col not in df or key not in L:
+            continue
+        bad = sorted(set(df[col].dropna().astype(str)) - set(L[key].dropna().astype(str)))
+        if bad:
+            issues.append(f"**{col}** not in {sheet}: " + ", ".join(f"`{b}`" for b in bad[:5]))
+    if not I.empty and "status_simple" in I:
+        bad = sorted(set(I["status_simple"].dropna().astype(str)) - set(STAGE_COLOR))
+        if bad:
+            issues.append("**status_simple** must be In Force / Draft / Conceptual: "
+                          + ", ".join(f"`{b}`" for b in bad[:5]))
+    FD = g("Field_display")
+    if not FD.empty and not I.empty and "column_name" in FD:
+        have = set(I.columns.astype(str))
+        for _, b in FD.iterrows():
+            cn = str(b["column_name"]).strip()
+            if cn.startswith("(") or str(b.get("show", "yes")).lower() in ("no", "false", "0"):
+                continue
+            if cn not in have:
+                issues.append(f"**Field_display** refers to column `{cn}`, which is not a header in "
+                              "the Instruments tab — that section will be skipped.")
+    DT = g("Display_text")
+    if not DT.empty and "key" in DT:
+        dup = DT["key"].astype(str)[DT["key"].astype(str).duplicated()].unique()
+        if len(dup):
+            issues.append("**Display_text** has duplicate keys (the last one wins): "
+                          + ", ".join(f"`{d}`" for d in dup[:5]))
+    if not I.empty and "iso3_codes" in I:
+        for _, b in I.iterrows():
+            codes = [c.strip() for c in str(b.get("iso3_codes", "") or "").replace(",", ";").split(";") if c.strip()]
+            bad = [c for c in codes if len(c) != 3]
+            if bad:
+                issues.append(f"**Instruments** `{b['instrument_id']}` has invalid iso3_codes "
+                              + ", ".join(f"`{c}`" for c in bad[:3]) + " — use 3-letter codes separated by `;`.")
+            elif not codes:
+                issues.append(f"**Instruments** `{b['instrument_id']}` has no iso3_codes, so it will not "
+                              "appear on the Overview map.")
+
+    P = g("Prices")
+    if not P.empty and "price" in P:
+        bad = P[pd.to_numeric(P["price"], errors="coerce").isna()]
+        for _, b in bad.iterrows():
+            issues.append(f"**Prices** row `{b.get('instrument_id','?')} / {b.get('period','?')}` "
+                          f"has a non-numeric price `{b['price']}` and will be ignored — "
+                          "enter digits only, no currency symbol.")
+        if "published_date" in P:
+            badd = P[pd.to_datetime(P["published_date"], errors="coerce", format="mixed").isna()]
+            for _, b in badd.iterrows():
+                issues.append(f"**Prices** row `{b.get('period','?')}` has an unreadable "
+                              f"published_date `{b['published_date']}` — use YYYY-MM-DD.")
+
+    if not I.empty:
+        ids = set(I["instrument_id"].dropna().astype(str))
+        for t in ["Sectors", "Events", "Sources", "Carbon_price_recognition", "Prices"]:
+            d = g(t)
+            if d.empty or "instrument_id" not in d:
+                continue
+            orph = sorted(set(d["instrument_id"].dropna().astype(str)) - ids)
+            if orph:
+                issues.append(f"**{t}** references unknown instrument_id: "
+                              + ", ".join(f"`{o}`" for o in orph[:5]))
+    return issues
+
+
+_issues = health(file_stamp(DATA_FILE))
+if dropped or _issues:
     st.sidebar.markdown("---")
-    st.sidebar.caption(f"⚠︎ {len(dropped)} non-data row(s) in the sheet were skipped: " + ", ".join(dropped[:8]))
+    st.sidebar.markdown(f'**{T("sidebar.datacheck", "Data check")}**')
+    if dropped:
+        st.sidebar.warning(f"{len(dropped)} row(s) skipped — the category is not in "
+                           "Category_legend: " + ", ".join(dropped[:6]))
+    for msg in _issues:
+        st.sidebar.warning(msg)
+    st.sidebar.caption("Fix these in the workbook, save, then press Reload data. "
+                       "Values must match the legend tabs exactly.")
 
 # ---------- top metrics ----------
 c1, c2, c3 = st.columns(3)
-c1.metric("Instruments", len(view))
-c2.metric("Jurisdictions", view["jurisdiction"].nunique())
-c3.metric("In force", (view["status_simple"] == "In Force").sum())
+c1.metric(T("metric.instruments", "Instruments"), len(view))
+c2.metric(T("metric.jurisdictions", "Jurisdictions"), view["jurisdiction"].nunique())
+c3.metric(T("metric.inforce", "In force"), (view["status_simple"] == STAGE_ORDER[0]).sum())
 
 tab0, tab1, tab2, tab5, tab3, tab4 = st.tabs(
-    ["Overview", "Instruments", "Sector coverage", "Carbon price recognition",
-     "Timeline", "Official sources"])
+    [T("tab.overview", "Overview"), T("tab.instruments", "Instruments"),
+     T("tab.sectors", "Sector coverage"), T("tab.recognition", "Carbon price recognition"),
+     T("tab.timeline", "Timeline"), T("tab.sources", "Official sources")])
 
 # ---- TAB 0: overview map ----
 with tab0:
-    st.subheader("Overview")
-    st.caption("Where border carbon measures stand, by jurisdiction. "
-               "Use the sidebar filters to narrow the map.")
+    st.subheader(T("tab.overview", "Overview"))
+    st.caption(T("caption.overview", ""))
 
     if view.empty:
-        st.info("No instruments match the current filters. Widen the selection in the sidebar.")
+        st.info(T("empty.filters", "No instruments match the current filters."))
     else:
         # one row per country code, taking the most advanced stage where a
         # jurisdiction has several instruments (e.g. the two US bills)
         recs = {}
         for _, r in view.iterrows():
-            for iso in ISO3.get(r["jurisdiction"], []):
+            for iso in iso3_for(r):
                 rank = STAGE_RANK.get(r["status_simple"], 0)
                 cur = recs.get(iso)
                 if cur is None or rank > cur["rank"]:
@@ -340,16 +513,15 @@ with tab0:
                 recs[iso]["measures"].append(r["instrument_name"])
         mapdf = pd.DataFrame([{**v, "Measures": " · ".join(v["measures"])} for v in recs.values()])
 
-        unmapped = sorted({r["jurisdiction"] for _, r in view.iterrows()
-                           if not ISO3.get(r["jurisdiction"])})
+        unmapped = sorted({r["jurisdiction"] for _, r in view.iterrows() if not iso3_for(r)})
 
         try:
             import plotly.express as px
             fig = px.choropleth(
                 mapdf, locations="iso", locationmode="ISO-3", color="Stage",
                 color_discrete_map=LEGEND_COLOR,
-                category_orders={"Stage": [STAGE_LABEL["In Force"], STAGE_LABEL["Draft"],
-                                           STAGE_LABEL["Conceptual"]]},
+                category_orders={"Stage": [STAGE_LABEL[k] for k in STAGE_ORDER
+                                           if k in STAGE_LABEL]},
                 hover_name="Jurisdiction",
                 hover_data={"iso": False, "Stage": True, "Measures": True},
             )
@@ -370,7 +542,8 @@ with tab0:
                        "— open the table below in the meantime.")
 
         if unmapped:
-            st.caption("Not shown on the map (no country code mapped): " + ", ".join(unmapped))
+            st.caption("Not shown on the map — add an ISO-3 code in the iso3_codes column of the "
+                       "Instruments tab for: " + ", ".join(unmapped))
         st.caption(f"{len(view)} measure(s) across {view['jurisdiction'].nunique()} jurisdiction(s), current filters.")
 
         # sectors per instrument, collapsed to one cell
@@ -404,7 +577,7 @@ with tab0:
 # ---- TAB 1: instrument cards ----
 with tab1:
     if view.empty:
-        st.info("No instruments match the current filters. Widen the selection in the sidebar.")
+        st.info(T("empty.filters", "No instruments match the current filters."))
     else:
         # TWO independent levels. Streamlit forbids expanders inside expanders, so the
         # card level is a session-state toggle and only the sub-sections are expanders.
@@ -414,11 +587,13 @@ with tab1:
         b1, b2, _sp = st.columns([1, 1, 3])
         all_ids = list(view["instrument_id"])
         cards_all_open = st.session_state.open_cards.issuperset(all_ids)
-        if b1.button("Collapse all instruments" if cards_all_open else "Expand all instruments",
+        if b1.button(T("button.collapse.instruments", "Collapse all instruments") if cards_all_open
+                     else T("button.expand.instruments", "Expand all instruments"),
                      use_container_width=True):
             st.session_state.open_cards = set() if cards_all_open else set(all_ids)
             st.rerun()
-        if b2.button("Collapse all sections" if st.session_state.expand_all else "Expand all sections",
+        if b2.button(T("button.collapse.sections", "Collapse all sections") if st.session_state.expand_all
+                     else T("button.expand.sections", "Expand all sections"),
                      use_container_width=True):
             st.session_state.expand_all = not st.session_state.expand_all
             st.rerun()
@@ -462,82 +637,83 @@ with tab1:
                     st.markdown('<div class="val" style="font-style:italic;color:#4a4030;'
                                 f'margin:.55rem 0 .95rem">{r["notes"]}</div>', unsafe_allow_html=True)
 
-                if r.get("Implementation/Coming into Force Date"):
-                    with st.expander("Implementation / in force", expanded=OPEN):
-                        val_block(r["Implementation/Coming into Force Date"])
+                # ---- sections are defined by the Field_display tab, not by this file ----
+                for order, sec_label, items in card_sections():
+                    special = [i for i in items if str(i["layout"]).lower() == "special"]
+                    if special:
+                        kind = str(special[0]["column_name"]).strip().lower()
+                        if kind == "(prices)":
+                            lp = latest_price(iid)
+                            if lp is None:
+                                continue
+                            hist = prices[prices["instrument_id"] == iid].sort_values("published_date")
+                            with st.expander(f'{sec_label} — {fmt_price(lp)} ({lp["period"]})', expanded=OPEN):
+                                st.markdown(f'<div class="bigprice">{fmt_price(lp)}</div>'
+                                            f'<div class="lab" style="margin-top:0">{lp["period"]} · '
+                                            f'published {lp["published_date"]}</div>', unsafe_allow_html=True)
+                                st.markdown(f'<div class="val" style="margin-top:.6rem">{lp["basis"]}</div>',
+                                            unsafe_allow_html=True)
+                                if lp.get("notes"):
+                                    st.markdown(f'<div class="val" style="color:var(--muted)">{lp["notes"]}</div>',
+                                                unsafe_allow_html=True)
+                                if len(hist) > 1:
+                                    st.markdown(f'<div class="lab">{T("label.pricehistory", "Published history")}</div>',
+                                                unsafe_allow_html=True)
+                                    rows = [[h["period"], h["published_date"], fmt_price(h),
+                                             ("", f'<a href="{h["official_url"]}" target="_blank">open ↗</a>'
+                                              if str(h.get("official_url", "")).startswith("http") else "")]
+                                            for _, h in hist[::-1].iterrows()]
+                                    html_table(["Period", "Published", "Price", "Source"], rows)
+                                if len(hist) >= 4:
+                                    st.line_chart(hist.set_index("period")["price"], height=200)
 
-                if r.get("object_and_purpose"):
-                    with st.expander("Object & purpose", expanded=OPEN):
-                        val_block(r["object_and_purpose"])
+                        elif kind == "(sectors)":
+                            msec = sec[sec["instrument_id"] == iid] if not sec.empty else pd.DataFrame()
+                            if msec.empty:
+                                continue
+                            with st.expander(sec_label, expanded=OPEN):
+                                cur = sorted(msec[msec["coverage"] == COV_CURRENT]["sector"].astype(str).unique())
+                                pro = sorted(msec[msec["coverage"] != COV_CURRENT]["sector"].astype(str).unique())
+                                st.markdown(f'<div class="lab">{T("label.inscope", "In scope")}</div>'
+                                            f'<div class="val">{" · ".join(cur) if cur else "None defined yet"}</div>',
+                                            unsafe_allow_html=True)
+                                if pro:
+                                    st.markdown(f'<div class="lab">{T("label.prospective", "Prospective")}</div>'
+                                                f'<div class="val">{" · ".join(pro)}</div>', unsafe_allow_html=True)
 
-                with st.expander("Emissions scope", expanded=OPEN):
-                    sc = st.columns(3)
-                    for col, (lab, k) in zip(sc, [("Scope 1", "scope1"),
-                                                  ("Scope 2", "scope2"),
-                                                  ("Scope 3", "scope3")]):
-                        col.markdown(f'<div class="lab">{lab}</div>'
-                                     f'<div class="val">{r.get(k, "")}</div>', unsafe_allow_html=True)
-                    if r.get("scope_other"):
-                        st.markdown(f'<div class="lab">Other scope notes</div>'
-                                    f'<div class="val">{r["scope_other"]}</div>', unsafe_allow_html=True)
+                        elif kind == "(source)":
+                            if not r.get("official_url"):
+                                continue
+                            with st.expander(sec_label, expanded=OPEN):
+                                st.markdown(f'<div class="val">{r.get("primary_source", "")} — '
+                                            f'<a href="{r["official_url"]}" target="_blank">official page ↗</a></div>',
+                                            unsafe_allow_html=True)
+                        continue
 
-                with st.expander("Adjustment, default values & thresholds", expanded=OPEN):
-                    cc = st.columns(3)
-                    for col, (lab, k) in zip(cc, [("3rd-country adjustment", "third_country_adjustment"),
-                                                  ("Default values", "default_values"),
-                                                  ("De minimis threshold", "de_minimis")]):
-                        col.markdown(f'<div class="lab">{lab}</div>'
-                                     f'<div class="val">{r.get(k, "")}</div>', unsafe_allow_html=True)
-
-                if r.get("calculation"):
-                    with st.expander("Calculation", expanded=OPEN):
-                        val_block(r["calculation"])
-
-                if r.get("qualifying_prices"):
-                    with st.expander("Qualifying third-country carbon prices", expanded=OPEN):
-                        val_block(r["qualifying_prices"])
-                        n = len(link[(link["instrument_id"] == r["instrument_id"]) &
-                                     (link["recognition_status"].astype(str)
-                                      .str.startswith("Recognised"))]) if not link.empty else 0
-                        if n:
-                            st.caption(f"{n} scheme(s) formally recognised — see the "
-                                       "Carbon price recognition tab for the list.")
-
-                if r.get("verification"):
-                    with st.expander("Verification", expanded=OPEN):
-                        val_block(r["verification"])
-
-                if r.get("review_appeal"):
-                    with st.expander("Review & appeal — if an importer disputes an assessment", expanded=OPEN):
-                        val_block(r["review_appeal"])
-
-                if r.get("revenue_use"):
-                    with st.expander("Revenue use", expanded=OPEN):
-                        val_block(r["revenue_use"])
-
-                msec = sec[sec["instrument_id"] == r["instrument_id"]] if not sec.empty else pd.DataFrame()
-                if not msec.empty:
-                    with st.expander("Sectors covered", expanded=OPEN):
-                        cur = sorted(msec[msec["coverage"] == "Current scope"]["sector"].astype(str).unique())
-                        pro = sorted(msec[msec["coverage"] == "Prospective"]["sector"].astype(str).unique())
-                        st.markdown('<div class="lab">In scope</div>'
-                                    f'<div class="val">{" · ".join(cur) if cur else "None defined yet"}</div>',
-                                    unsafe_allow_html=True)
-                        if pro:
-                            st.markdown('<div class="lab">Flagged for possible future addition</div>'
-                                        f'<div class="val">{" · ".join(pro)}</div>', unsafe_allow_html=True)
-
-                if r.get("official_url"):
-                    with st.expander("Primary source", expanded=OPEN):
-                        st.markdown(f'<div class="val">{r.get("primary_source", "")} — '
-                                    f'<a href="{r["official_url"]}" target="_blank">official page ↗</a></div>',
-                                    unsafe_allow_html=True)
+                    # ordinary text fields: 'full' spans the card, 'third' sits in a 3-up row
+                    vals = [(i, str(r.get(COLMAP.get(i["column_name"], i["column_name"]), "") or ""))
+                            for i in items]
+                    if not any(v for _, v in vals):
+                        continue
+                    with st.expander(sec_label, expanded=OPEN):
+                        thirds = [(i, v) for i, v in vals if str(i["layout"]).lower() == "third"]
+                        if thirds:
+                            cols = st.columns(max(len(thirds), 1))
+                            for col, (i, v) in zip(cols, thirds):
+                                col.markdown(f'<div class="lab">{i["field_label"] or i["column_name"]}</div>'
+                                             f'<div class="val">{v}</div>', unsafe_allow_html=True)
+                        for i, v in vals:
+                            if str(i["layout"]).lower() == "third" or not v:
+                                continue
+                            if i["field_label"]:
+                                st.markdown(f'<div class="lab">{i["field_label"]}</div>', unsafe_allow_html=True)
+                            st.markdown(f'<div class="val">{v}</div>', unsafe_allow_html=True)
 
                 st.markdown('</div>', unsafe_allow_html=True)
 
 # ---- TAB 2: sector coverage matrix ----
 with tab2:
-    st.subheader("Sector coverage")
+    st.subheader(T("tab.sectors", "Sector coverage"))
     keep_ids = set(view["instrument_id"])
     msec = sec[sec["instrument_id"].isin(keep_ids)] if not sec.empty else pd.DataFrame()
     if msec.empty:
@@ -562,10 +738,9 @@ with tab2:
 
         def cell(jur, sector):
             cv = cover.get((jur, sector))
-            if cv == "Current scope":
-                return ("tick", "✓")
-            if cv == "Prospective":
-                return ("pros", "○")
+            if cv in COV:
+                sym, col = COV[cv]
+                return ("tick", f'<span style="color:{col}">{sym}</span>')
             return ("tick", "")
 
         def row_label(jur):
@@ -576,18 +751,15 @@ with tab2:
         rows = [[row_label(j)] + [cell(j, sc) for sc in sectors] for j in order]
         html_table(["Jurisdiction"] + sectors, rows, max_height=560, first_col_sticky=True)
 
+        keys = "".join(
+            f'<span><b style="color:{c}">{sym}</b> '
+            f'{T("legend.inscope", "in scope") if k == COV_CURRENT else T("legend.prospective", "prospective")}'
+            '</span>' for k, (sym, c) in COV.items())
         dots = "".join(
             f'<span><b style="color:{STAGE_COLOR[k]}">●</b> {v.lower()}</span>'
             for k, v in STAGE_LABEL.items() if k in set(view["status_simple"]))
-        st.markdown(
-            '<div class="cvlegend">'
-            '<span><b style="color:#1B7A5A">✓</b> in scope</span>'
-            '<span><b style="color:#93A0B5">○</b> flagged for possible future addition</span>'
-            f'{dots}</div>', unsafe_allow_html=True)
-        st.caption("Jurisdictions run down the side because that list grows fastest; sectors run across. "
-                   "The symbol shows whether a sector is covered now; the dot beside each jurisdiction shows "
-                   "how far that instrument itself has progressed. Australia's cement tick sits beside a blue "
-                   "dot because the whole measure is still only a recommendation.")
+        st.markdown(f'<div class="cvlegend">{keys}{dots}</div>', unsafe_allow_html=True)
+        st.caption(T("caption.sectors", ""))
 
         with st.expander("Show HS codes behind each sector"):
             rank = {j: i for i, j in enumerate(order)}
@@ -604,7 +776,7 @@ with tab2:
 # "recognition", not "linkage": linkage is a distinct legal concept (mutual recognition
 # of allowances between two trading systems, as with the EU-Swiss ETS).
 with tab5:
-    st.subheader("Carbon price recognition")
+    st.subheader(T("tab.recognition", "Carbon price recognition"))
     keep_ids = set(view["instrument_id"])
     ml = link[link["instrument_id"].isin(keep_ids)].copy() if not link.empty else pd.DataFrame()
     if ml.empty:
@@ -624,7 +796,8 @@ with tab5:
         groups = list(dict.fromkeys(ml["instrument_id"]))
         rb1, _rb = st.columns([1, 3])
         rec_all_open = st.session_state.open_rec.issuperset(groups)
-        if rb1.button("Collapse all" if rec_all_open else "Expand all",
+        if rb1.button(T("button.collapse", "Collapse all") if rec_all_open
+                      else T("button.expand", "Expand all"),
                       key="rec_toggle", use_container_width=True):
             st.session_state.open_rec = set() if rec_all_open else set(groups)
             st.rerun()
@@ -652,7 +825,7 @@ with tab5:
 
 # ---- TAB 3: timeline ----
 with tab3:
-    st.subheader("Timeline of key events")
+    st.subheader(T("tab.timeline", "Timeline"))
     keep_ids = set(view["instrument_id"])
     mev = ev[ev["instrument_id"].isin(keep_ids)].copy() if not ev.empty else pd.DataFrame()
     if mev.empty:
@@ -678,9 +851,7 @@ with tab3:
         if tev.empty:
             st.info("No events in the selected year range.")
         elif layout == "Swimlane grid":
-            st.caption("Years across the top · one lane per jurisdiction · each event in its year cell. "
-                       "Read a lane left-to-right for one jurisdiction's arc; read a column top-to-bottom for one year. "
-                       "Colour = category. Scrolls sideways if the range is wide.")
+            st.caption(T("caption.timeline.swimlane", ""))
             # jurisdictions ordered by earliest event
             order_j = tev.groupby("jurisdiction")["date"].min().sort_values().index.tolist()
 
@@ -704,7 +875,7 @@ with tab3:
             st.markdown(f'<div class="tl-scroll"><table class="tl-table"><tr>{head}</tr>{rows_html}</table></div>',
                         unsafe_allow_html=True)
         else:
-            st.caption("Every event in date order.")
+            st.caption(T("caption.timeline.list", ""))
             for _, r in tev.sort_values("date").iterrows():
                 col = CAT_COLOR.get(r["category"], "#1D2657")
                 when = f'{r["mon"]} {r["year"]}'.strip()
@@ -716,7 +887,8 @@ with tab3:
 
 # ---- TAB 4: sources ----
 with tab4:
-    st.subheader("Official pages & documents")
+    st.subheader(T("tab.sources", "Official sources"))
+    st.caption(T("caption.sources", ""))
     keep_ids = set(view["instrument_id"])
     msrc = src[src["instrument_id"].isin(keep_ids)].copy() if not src.empty else pd.DataFrame()
     if msrc.empty:
@@ -733,9 +905,4 @@ with tab4:
                    rows, max_height=620)
 
 # ---------- footer ----------
-st.markdown(
-    '<div class="foot"><b>Disclaimer.</b> This is an independent tracker, compiled on a best-effort basis '
-    'from official and other credible public sources. It is not affiliated with, or endorsed by, any government '
-    'or organisation listed, and nothing here is legal advice. Entries may be incomplete or superseded — '
-    'always check the linked official source before relying on it.</div>',
-    unsafe_allow_html=True)
+st.markdown(f'<div class="foot">{T("app.footer", "")}</div>', unsafe_allow_html=True)
